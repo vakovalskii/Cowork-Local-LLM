@@ -30,12 +30,6 @@ export function usePromptActions(sendEvent: (event: ClientEvent) => void) {
     if (activeSessionId && !trimmedPrompt) return;
 
     if (!activeSessionId) {
-      // Check API settings before starting
-      if (!apiSettings || !apiSettings.apiKey) {
-        setGlobalError("Please configure API settings first (click ⚙️ Settings)");
-        return;
-      }
-      
       // Starting new session - can be empty for chat-only mode
       let title = "";
       try {

@@ -98,6 +98,9 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
     }
   };
 
+  // Store last error body for error handling
+  let lastErrorBody: string | null = null;
+
   // Start the query in the background
   (async () => {
     try {
@@ -122,11 +125,33 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
       console.log(`[OpenAI Runner] Base URL: ${baseURL}`);
       console.log(`[OpenAI Runner] Temperature: ${guiSettings.temperature || 0.3}`);
 
-      // Initialize OpenAI client
+      // Custom fetch to capture error response bodies
+      const originalFetch = global.fetch;
+      const customFetch = async (url: any, options: any) => {
+        const response = await originalFetch(url, options);
+        
+        // Clone response to read body for errors
+        if (!response.ok && response.status >= 400) {
+          const clonedResponse = response.clone();
+          try {
+            const errorBody = await clonedResponse.text();
+            console.error(`[OpenAI Runner] API Error Response (${response.status}):`, errorBody);
+            // Store for catch block
+            lastErrorBody = errorBody;
+          } catch (e) {
+            console.error('[OpenAI Runner] Failed to read error body:', e);
+          }
+        }
+        
+        return response;
+      };
+
+      // Initialize OpenAI client with custom fetch
       const client = new OpenAI({
         apiKey: guiSettings.apiKey || 'dummy-key',
         baseURL: baseURL,
-        dangerouslyAllowBrowser: false
+        dangerouslyAllowBrowser: false,
+        fetch: customFetch as any
       });
 
       // Initialize tool executor with API settings for web tools
@@ -705,33 +730,42 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
       // Extract detailed error message from API response
       let errorMessage = String(error);
       
-      // Try to extract more details from OpenAI error
-      if (error.error) {
-        errorMessage = JSON.stringify(error.error);
+      // Check if we captured the error body via custom fetch
+      if (lastErrorBody) {
+        try {
+          const errorBody = JSON.parse(lastErrorBody);
+          if (errorBody.detail) {
+            errorMessage = `${errorBody.detail}`;
+          } else if (errorBody.error) {
+            errorMessage = `${errorBody.error}`;
+          } else {
+            errorMessage = `API Error: ${JSON.stringify(errorBody)}`;
+          }
+        } catch (parseError) {
+          // Not JSON, use raw text
+          errorMessage = lastErrorBody;
+        }
+      } else if (error.error) {
+        // OpenAI SDK error object
+        errorMessage = typeof error.error === 'string' ? error.error : JSON.stringify(error.error);
       } else if (error.message) {
         errorMessage = error.message;
       }
       
-      // For 400 errors, try to get the response body
-      if (error.status === 400 && error.response) {
-        try {
-          const responseBody = await error.response.json();
-          if (responseBody.detail) {
-            errorMessage = `API Error: ${responseBody.detail}`;
-          } else {
-            errorMessage = `API Error (400): ${JSON.stringify(responseBody)}`;
-          }
-        } catch (parseError) {
-          // Response body not JSON or empty
-          errorMessage = `API Error (400): ${error.message || 'Bad Request'}`;
-        }
+      // Add status code for clarity if available
+      if (error.status && !errorMessage.includes(`${error.status}`)) {
+        errorMessage = `[${error.status}] ${errorMessage}`;
       }
+      
+      // Send error message to chat
+      sendMessage('text', { text: `\n\n❌ **Error:** ${errorMessage}\n\nPlease check your API settings (Base URL, Model Name, API Key) and try again.` });
+      saveToDb('text', { text: `\n\n❌ **Error:** ${errorMessage}\n\nPlease check your API settings (Base URL, Model Name, API Key) and try again.` });
       
       onEvent({
         type: "session.status",
         payload: { 
           sessionId: session.id, 
-          status: "error", 
+          status: "idle", 
           title: session.title, 
           error: errorMessage 
         }
