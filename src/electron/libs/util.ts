@@ -1,11 +1,10 @@
 import { claudeCodeEnv, loadClaudeSettingsEnv } from "./claude-settings.js";
 import { loadApiSettings } from "./settings-store.js";
-import { unstable_v2_prompt } from "@anthropic-ai/claude-agent-sdk";
-import type { SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { ApiSettings } from "../types.js";
 import { app } from "electron";
 import { join } from "path";
 import { homedir } from "os";
+import OpenAI from "openai";
 
 // Get Claude Code CLI path for packaged app
 export function getClaudeCodePath(): string | undefined {
@@ -78,23 +77,32 @@ export const generateSessionTitle = async (userIntent: string | null) => {
     const guiSettings = loadApiSettings();
     
     // If no valid settings, use simple title
-    if (!guiSettings || !guiSettings.apiKey || guiSettings.apiKey === 'dummy-key') {
+    if (!guiSettings || !guiSettings.apiKey) {
       return userIntent.slice(0, 50) + (userIntent.length > 50 ? '...' : '');
     }
     
-    const env = getEnhancedEnv(guiSettings);
-
-    const result: SDKResultMessage = await unstable_v2_prompt(
-      `please analynis the following user input to generate a short but clearly title to identify this conversation theme:
-      ${userIntent}
-      directly output the title, do not include any other content`, {
-      model: claudeCodeEnv.ANTHROPIC_MODEL,
-      env,
-      pathToClaudeCodeExecutable: claudeCodePath,
+    // Create OpenAI client with user settings
+    const client = new OpenAI({
+      apiKey: guiSettings.apiKey,
+      baseURL: guiSettings.baseUrl ? `${guiSettings.baseUrl}/v1` : undefined,
     });
 
-    if (result.subtype === "success") {
-      return result.result;
+    const response = await client.chat.completions.create({
+      model: guiSettings.model || 'gpt-3.5-turbo',
+      messages: [
+        {
+          role: 'user',
+          content: `Generate a short title (max 50 chars) for this conversation. Only output the title, nothing else:\n\n${userIntent}`
+        }
+      ],
+      max_tokens: 50,
+      temperature: 0.3,
+    });
+
+    const title = response.choices[0]?.message?.content?.trim();
+    if (title) {
+      // Clean up the title - remove quotes if present
+      return title.replace(/^["']|["']$/g, '').slice(0, 50);
     }
   } catch (error) {
     console.error('Failed to generate session title:', error);
