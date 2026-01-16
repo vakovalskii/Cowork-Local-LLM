@@ -40,7 +40,7 @@ type ChatMessage = {
 
 // Logging
 const getLogsDir = () => {
-  const logsDir = join(homedir(), '.agent-cowork', 'logs');
+  const logsDir = join(homedir(), '.localdesk', 'logs');
   if (!existsSync(logsDir)) {
     mkdirSync(logsDir, { recursive: true });
   }
@@ -171,7 +171,7 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
           const { join } = await import('path');
           const { homedir } = await import('os');
           
-          const memoryPath = join(homedir(), '.agent-cowork', 'memory.md');
+          const memoryPath = join(homedir(), '.localdesk', 'memory.md');
           
           await access(memoryPath, constants.F_OK);
           const content = await readFile(memoryPath, 'utf-8');

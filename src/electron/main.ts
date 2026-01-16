@@ -189,7 +189,7 @@ app.on("ready", () => {
     ipcMainHandle("read-memory", async () => {
         try {
             const { homedir } = await import('os');
-            const memoryPath = join(homedir(), '.agent-cowork', 'memory.md');
+            const memoryPath = join(homedir(), '.localdesk', 'memory.md');
             
             try {
                 const content = await fs.readFile(memoryPath, 'utf-8');
@@ -210,7 +210,7 @@ app.on("ready", () => {
     ipcMainHandle("write-memory", async (_, content: string) => {
         try {
             const { homedir } = await import('os');
-            const memoryDir = join(homedir(), '.agent-cowork');
+            const memoryDir = join(homedir(), '.localdesk');
             const memoryPath = join(memoryDir, 'memory.md');
             
             // Ensure directory exists

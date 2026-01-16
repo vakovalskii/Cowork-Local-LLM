@@ -2,7 +2,7 @@
  * Prompt loader - loads and formats prompts from template files
  */
 
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -46,6 +46,39 @@ const getShellCommands = () => {
 };
 
 /**
+ * Scan installed packages in sandbox
+ */
+function getSandboxPackages(cwd: string): string[] {
+  try {
+    const sandboxDir = join(cwd, '.localdesk-sandbox', 'node_modules');
+    if (!existsSync(sandboxDir)) {
+      return [];
+    }
+    
+    const packages: string[] = [];
+    const entries = readdirSync(sandboxDir, { withFileTypes: true });
+    
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue;
+      
+      if (entry.name.startsWith('@')) {
+        // Scoped package
+        const scopedDir = join(sandboxDir, entry.name);
+        const scopedPackages = readdirSync(scopedDir);
+        scopedPackages.forEach(pkg => packages.push(`${entry.name}/${pkg}`));
+      } else if (entry.isDirectory()) {
+        packages.push(entry.name);
+      }
+    }
+    
+    return packages.sort();
+  } catch (error) {
+    console.log('[Prompt Loader] Error scanning sandbox packages:', error);
+    return [];
+  }
+}
+
+/**
  * Load system prompt from template file and replace placeholders
  */
 export function getSystemPrompt(cwd: string): string {
@@ -54,6 +87,13 @@ export function getSystemPrompt(cwd: string): string {
 
   const osName = getOSName();
   const cmds = getShellCommands();
+  const installedPackages = getSandboxPackages(cwd);
+  
+  // Build sandbox packages section
+  let sandboxPackagesInfo = '';
+  if (installedPackages.length > 0) {
+    sandboxPackagesInfo = `\n\n**Installed Sandbox Packages:**\nThe following npm packages are already installed and available via require():\n${installedPackages.map(pkg => `- ${pkg}`).join('\n')}`;
+  }
 
   // Replace placeholders
   template = template
@@ -66,7 +106,8 @@ export function getSystemPrompt(cwd: string): string {
     .replace(/{changeDirCmd}/g, cmds.changeDir)
     .replace(/{currentDirCmd}/g, cmds.currentDir)
     .replace(/{findFilesCmd}/g, cmds.findFiles)
-    .replace(/{searchTextCmd}/g, cmds.searchText);
+    .replace(/{searchTextCmd}/g, cmds.searchText)
+    .replace(/{sandboxPackages}/g, sandboxPackagesInfo);
 
   return template;
 }

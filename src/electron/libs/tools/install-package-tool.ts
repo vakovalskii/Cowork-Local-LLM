@@ -43,7 +43,7 @@ export async function installPackageTool(
 
   try {
     // Create sandbox node_modules directory in workspace
-    const sandboxDir = join(context.cwd, '.cowork-sandbox');
+    const sandboxDir = join(context.cwd, '.localdesk-sandbox');
     const nodeModulesDir = join(sandboxDir, 'node_modules');
     
     if (!existsSync(sandboxDir)) {

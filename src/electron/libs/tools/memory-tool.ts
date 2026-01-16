@@ -11,9 +11,9 @@ export interface MemoryToolParams {
   section?: string; // Optional: specific section to delete
 }
 
-// Get memory file path in ~/.agent-cowork/
+// Get memory file path in ~/.localdesk/
 function getMemoryPath(): string {
-  return join(homedir(), '.agent-cowork', 'memory.md');
+  return join(homedir(), '.localdesk', 'memory.md');
 }
 
 export const MemoryToolDefinition = {
@@ -22,7 +22,7 @@ export const MemoryToolDefinition = {
     name: 'Memory',
     description: `Manage long-term memory by storing important information in memory.md file.
     
-IMPORTANT: Memory is stored globally in ~/.agent-cowork/memory.md and persists across ALL projects and sessions.
+IMPORTANT: Memory is stored globally in ~/.localdesk/memory.md and persists across ALL projects and sessions.
 
 **BE PROACTIVE**: You should automatically remember important information even if not explicitly asked:
 

@@ -1,13 +1,13 @@
 {
-	"name": "agent-cowork",
+	"name": "localdesk",
 	"private": true,
 	"version": "0.0.3",
-	"description": "Desktop AI Assistant with Local Model Support - OpenAI SDK compatible agent with memory system, file operations, web search, and modern UI",
+	"description": "LocalDesk - Desktop AI Assistant with Local Model Support - OpenAI SDK compatible agent with memory system, file operations, web search, and modern UI",
 	"author": "Valerii Kovalskii <v.kovalskii@example.com>",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/vakovalskii/Cowork-Local-LLM.git"
+		"url": "https://github.com/vakovalskii/LocalDesk.git"
 	},
 	"keywords": [
 		"ai-assistant",

@@ -295,7 +295,7 @@ function App() {
               </div>
             )}
           </div>
-          <span className="text-sm font-medium text-ink-700">{activeSession?.title || "Agent Cowork"}</span>
+          <span className="text-sm font-medium text-ink-700">{activeSession?.title || "LocalDesk"}</span>
           <div className="flex items-center gap-2">
             {!activeSession?.cwd && activeSessionId && (
               <button

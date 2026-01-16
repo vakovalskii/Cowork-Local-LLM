@@ -14,7 +14,7 @@ dist-electron
 *.local
 
 # Sandbox directory for ExecuteJS
-.cowork-sandbox
+.localdesk-sandbox
 
 # Editor directories and files
 .vscode/*

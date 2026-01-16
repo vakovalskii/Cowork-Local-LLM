@@ -1,9 +1,9 @@
 <div align="center">
 
-# Agent Cowork - Local LLM Edition
+# LocalDesk
 
-[![Version](https://img.shields.io/badge/version-0.0.3-blue.svg)](https://github.com/vakovalskii/Cowork-Local-LLM/releases)
-[![Platform](https://img.shields.io/badge/platform-%20Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/vakovalskii/Cowork-Local-LLM)
+[![Version](https://img.shields.io/badge/version-0.0.3-blue.svg)](https://github.com/vakovalskii/LocalDesk/releases)
+[![Platform](https://img.shields.io/badge/platform-%20Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/vakovalskii/LocalDesk)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 **Desktop AI Assistant with Local Model Support**
@@ -38,13 +38,13 @@ https://github.com/user-attachments/assets/f60afb47-05cc-4578-9550-a319f1eae7df
 - ✅ **Permission System** — ask/default modes for tool execution control
 
 ### Advanced Features
-- ✅ **Memory System** — persistent storage of user preferences in `~/.agent-cowork/memory.md`
+- ✅ **Memory System** — persistent storage of user preferences in `~/.localdesk/memory.md`
 - ✅ **Dynamic Memory** — automatic reload after memory updates within same session
 - ✅ **Memory Editor** — edit memory directly in settings with reload/open folder buttons
 - ✅ **Token Tracking** — display input/output tokens and API duration
 - ✅ **Request Logging** — full raw JSON request/response logs for debugging
 - ✅ **JavaScript Sandbox** — isolated Node.js VM for executing JS code within workspace
-- ✅ **Package Management** — install npm packages into isolated sandbox (`.cowork-sandbox/`)
+- ✅ **Package Management** — install npm packages into isolated sandbox (`.localdesk-sandbox/`)
 - ✅ **PDF Support** — extract text from PDF files using `pdf-parse` library
 - ✅ **Optional Workspace** — start empty chats without workspace folder, add it later when needed
 - ✅ **Stop Streaming** — interrupt LLM responses at any time
@@ -53,40 +53,95 @@ https://github.com/user-attachments/assets/f60afb47-05cc-4578-9550-a319f1eae7df
 
 ### Installation
 
+#### macOS / Linux
+
 ```bash
 # Clone the repository
-git clone https://github.com/vakovalskii/Cowork-Local-LLM.git
-cd Cowork-Local-LLM
+git clone https://github.com/vakovalskii/LocalDesk.git
+cd LocalDesk
 
-# Install dependencies (use bun for faster install)
-bun install
-# or
+# Install dependencies
 npm install
 
-# If you get "Cannot find module @rollup/rollup-darwin-arm64" error on macOS:
-# (This is a known npm bug with optional dependencies)
-rm -rf node_modules package-lock.json
-npm install
+# Rebuild native modules for Electron
+npx electron-rebuild -f -w better-sqlite3
 
-# Compile Electron code
+# Compile Electron code (required before first run)
 npm run transpile:electron
-```
 
-### Running in Development
-
-```bash
-# Start both Vite and Electron
+# Run in development mode
 npm run dev
 ```
 
-Or manually in two terminals:
+#### Windows (PowerShell)
 
-**Terminal 1 - React Dev Server:**
+```powershell
+# Clone the repository
+git clone https://github.com/vakovalskii/LocalDesk.git
+cd LocalDesk
+
+# Install dependencies
+npm install
+
+# Rebuild native modules for Electron
+npx electron-rebuild -f -w better-sqlite3
+
+# Compile Electron code (required before first run)
+npm run transpile:electron
+
+# Run in development mode
+npm run dev
+```
+
+### Common Issues
+
+<details>
+<summary><b>macOS: "Cannot find module @rollup/rollup-darwin-arm64"</b></summary>
+
+This is a known npm bug with optional dependencies:
+```bash
+rm -rf node_modules package-lock.json
+npm install
+npx electron-rebuild -f -w better-sqlite3
+npm run transpile:electron
+```
+</details>
+
+<details>
+<summary><b>All platforms: "better-sqlite3 was compiled against a different Node.js version"</b></summary>
+
+Rebuild native modules for Electron's Node.js version:
+```bash
+npx electron-rebuild -f -w better-sqlite3
+npm run transpile:electron
+```
+</details>
+
+<details>
+<summary><b>Windows: Build tools errors</b></summary>
+
+Install Windows build tools:
+```powershell
+npm install --global windows-build-tools
+# or install Visual Studio Build Tools manually
+```
+</details>
+
+### Running in Development
+
+**Automatic (recommended):**
+```bash
+npm run dev
+```
+
+**Manual (two terminals):**
+
+Terminal 1 - React Dev Server:
 ```bash
 npm run dev:react
 ```
 
-**Terminal 2 - Electron (after Vite starts):**
+Terminal 2 - Electron (after Vite starts):
 ```bash
 # macOS/Linux
 NODE_ENV=development npx electron .
@@ -164,7 +219,7 @@ The Memory feature allows the agent to remember user preferences and context acr
 4. **Edit Memory:** View and edit `memory.md` directly in Settings
 5. **Dynamic Reload:** Memory updates are immediately available in the current session
 
-**Memory Location:** `~/.agent-cowork/memory.md`
+**Memory Location:** `~/.localdesk/memory.md`
 
 **Example Usage:**
 ```
@@ -192,7 +247,7 @@ Agent: "You prefer Python over JavaScript" ✅
   - Access to: `fs`, `path`, `crypto`, `console`, `__dirname`
   - Can `require()` built-in modules and installed packages
   - Isolated to workspace folder for security
-- **InstallPackage** — install npm packages into `.cowork-sandbox/` directory
+- **InstallPackage** — install npm packages into `.localdesk-sandbox/` directory
   - Example: `InstallPackage(['lodash', 'axios', 'pdf-parse'])`
 
 ### Web Tools (Optional)
@@ -262,17 +317,17 @@ src/
 ## 🔐 Data Storage
 
 ### Application Data
-**Windows:** `C:\Users\YourName\AppData\Roaming\agent-cowork\`  
-**macOS:** `~/Library/Application Support/agent-cowork/`  
-**Linux:** `~/.config/agent-cowork/`
+**Windows:** `C:\Users\YourName\AppData\Roaming\localdesk\`  
+**macOS:** `~/Library/Application Support/localdesk/`  
+**Linux:** `~/.config/localdesk/`
 
 Files:
 - `sessions.db` — SQLite database with chat history
 - `api-settings.json` — API configuration
 
 ### Global Data (All Platforms)
-- `~/.agent-cowork/logs/` — raw JSON request/response logs (debugging)
-- `~/.agent-cowork/memory.md` — persistent memory storage (user preferences, context)
+- `~/.localdesk/logs/` — raw JSON request/response logs (debugging)
+- `~/.localdesk/memory.md` — persistent memory storage (user preferences, context)
 
 ## 🤝 Contributing
 

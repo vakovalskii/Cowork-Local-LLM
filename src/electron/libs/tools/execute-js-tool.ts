@@ -7,6 +7,9 @@ import { join, resolve } from 'path';
 import { createRequire } from 'module';
 import type { ToolDefinition, ToolResult, ToolExecutionContext } from './base-tool.js';
 
+// Create require function for ES modules (since global require doesn't exist in ESM)
+const esmRequire = createRequire(import.meta.url);
+
 export const ExecuteJSToolDefinition: ToolDefinition = {
   type: "function",
   function: {
@@ -48,17 +51,15 @@ export async function executeJSTool(
     console.log('[ExecuteJS] Code length:', args.code.length);
     
     // Prepare sandbox node_modules path
-    const sandboxNodeModules = join(context.cwd, '.cowork-sandbox', 'node_modules');
+    const sandboxNodeModules = join(context.cwd, '.localdesk-sandbox', 'node_modules');
     
     // Create custom require for sandbox modules
+    // Use esmRequire as fallback since global require doesn't exist in ES modules
     const customRequire = existsSync(sandboxNodeModules) 
       ? createRequire(join(sandboxNodeModules, 'package.json'))
-      : require;
+      : esmRequire;
     
-    // Execute code with access to require
-    const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-    const fn = new AsyncFunction('require', '__dirname', 'console', args.code);
-    
+    // Prepare custom console
     const output: string[] = [];
     const customConsole = {
       log: (...args: any[]) => {
@@ -78,9 +79,22 @@ export async function executeJSTool(
       },
     };
     
-    // Run with timeout
+    // Execute code with require, __dirname, and console available
+    // Wrap user code to make require, __dirname, console available as const variables
+    const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+    const wrappedCode = `
+      const require = arguments[0];
+      const __dirname = arguments[1];
+      const console = arguments[2];
+      
+      // User code starts here
+      ${args.code}
+    `;
+    const fn = new AsyncFunction(wrappedCode);
+    
+    // Run with timeout, passing require, __dirname, console as arguments
     const result = await Promise.race([
-      fn(customRequire, context.cwd, customConsole),
+      fn.call(null, customRequire, context.cwd, customConsole),
       new Promise((_, reject) => setTimeout(() => reject(new Error('Execution timeout')), timeout))
     ]);
     

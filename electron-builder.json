@@ -1,6 +1,6 @@
 {
-    "appId": "com.devagentforge.agentcowork",
-    "productName": "Agent Cowork",
+    "appId": "com.vakovalskii.localdesk",
+    "productName": "LocalDesk",
     "files": [
         "dist-electron",
         "dist-react"
