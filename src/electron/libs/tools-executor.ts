@@ -183,7 +183,7 @@ export class ToolExecutor {
           return await executeReadDocumentTool(args as any, context);
         
         case 'render_page':
-        case 'schedule_task':
+        case 'Scheduler':
           return await this.executeScheduleTask(args, context);
         
           return await executeRenderPageTool(args as any, context);

@@ -15,7 +15,7 @@ export interface ScheduleTaskParams {
 export const ScheduleTaskToolDefinition: ToolDefinition = {
   type: 'function',
   function: {
-    name: 'schedule_task',
+    name: 'Scheduler',
     description: `Schedule tasks with notifications and automatic execution.
 
 **Use Cases**:
