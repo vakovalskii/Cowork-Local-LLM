@@ -10,7 +10,7 @@ import type { Session } from "./session-store.js";
 import { loadApiSettings } from "./settings-store.js";
 import { TOOLS, getTools, getSystemPrompt } from "./tools-definitions.js";
 import { getInitialPrompt } from "./prompt-loader.js";
-import { getTodosSummary, getTodos, setTodos } from "./tools/manage-todos-tool.js";
+import { getTodosSummary, getTodos, setTodos, clearTodos } from "./tools/manage-todos-tool.js";
 import { ToolExecutor } from "./tools-executor.js";
 import { writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
@@ -212,7 +212,8 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
       if (sessionStore && session.id) {
         const history = sessionStore.getSessionHistory(session.id);
         
-        // Load todos from history
+        // Clear todos from previous session, then load from history
+        clearTodos();
         if (history && history.todos && history.todos.length > 0) {
           console.log(`[OpenAI Runner] Loading ${history.todos.length} todos from history`);
           setTodos(history.todos);

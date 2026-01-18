@@ -449,21 +449,50 @@ export async function executeRenderPageTool(
     // Wait for JS to execute
     await new Promise(resolve => setTimeout(resolve, waitTime));
     
-    // For Telegram: scroll to load more posts if needed
+    // For Telegram: scroll to TOP to load older posts
     if (isTelegram && effectiveMaxPosts > 5) {
-      console.log(`[render_page] Telegram: scrolling to load more posts (target: ${effectiveMaxPosts})...`);
+      console.log(`[render_page] Telegram: scrolling to TOP to load older posts (target: ${effectiveMaxPosts})...`);
       
-      // Scroll up multiple times to load more posts
-      const scrollIterations = Math.ceil(effectiveMaxPosts / 5);
-      for (let i = 0; i < scrollIterations; i++) {
+      // Telegram loads ~14-20 posts initially
+      // Scrolling to top (0,0) triggers lazy-loading of ~18 more older posts
+      // Each scroll + 2sec wait loads another batch
+      const maxIterations = Math.ceil(effectiveMaxPosts / 15); // ~15 posts per scroll
+      
+      for (let i = 0; i < maxIterations; i++) {
+        // Get current post count before scrolling
+        const postCountBefore = await renderWindow.webContents.executeJavaScript(`
+          document.querySelectorAll('.tgme_widget_message_wrap').length
+        `);
+        
+        console.log(`[render_page] Telegram scroll ${i + 1}/${maxIterations}, posts: ${postCountBefore}`);
+        
+        // Already have enough posts?
+        if (postCountBefore >= effectiveMaxPosts) {
+          console.log(`[render_page] Got enough posts (${postCountBefore}), stopping scroll`);
+          break;
+        }
+        
+        // Scroll to the very TOP to trigger loading older posts
         await renderWindow.webContents.executeJavaScript(`
           window.scrollTo(0, 0);
         `);
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Wait 2 seconds for Telegram to load older posts
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Check if new posts were loaded
+        const postCountAfter = await renderWindow.webContents.executeJavaScript(`
+          document.querySelectorAll('.tgme_widget_message_wrap').length
+        `);
+        
+        console.log(`[render_page] After scroll: ${postCountAfter} posts`);
+        
+        // If no new posts loaded after first iteration, we've reached the beginning
+        if (postCountAfter === postCountBefore && i > 0) {
+          console.log(`[render_page] No new posts loaded, reached channel beginning`);
+          break;
+        }
       }
-      
-      // Wait for posts to load
-      await new Promise(resolve => setTimeout(resolve, 2000));
     }
     
     // Choose extraction script based on URL type

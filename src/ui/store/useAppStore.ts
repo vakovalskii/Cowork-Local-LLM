@@ -51,7 +51,7 @@ interface AppState {
 }
 
 function createSession(id: string): SessionView {
-  return { id, title: "", status: "idle", messages: [], permissionRequests: [], hydrated: false };
+  return { id, title: "", status: "idle", messages: [], permissionRequests: [], hydrated: false, todos: [] };
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -167,8 +167,8 @@ export const useAppStore = create<AppState>((set, get) => ({
                 // Use token counts from payload (from DB), fallback to existing values
                 inputTokens: inputTokens ?? existing.inputTokens,
                 outputTokens: outputTokens ?? existing.outputTokens,
-                // Load todos from DB
-                todos: todos ?? existing.todos
+                // Load todos from DB (use empty array if none, don't inherit from previous session)
+                todos: todos ?? []
               }
             }
           };
