@@ -42,7 +42,7 @@
 
 ## 🚀 Quick Start
 
-### Installation
+### Installation (npm)
 
 ```bash
 # Clone the repository
@@ -58,6 +58,25 @@ npx electron-rebuild -f -w better-sqlite3
 # Run in development mode
 npm run dev
 ```
+
+### Installation (bun) ⚡
+
+```bash
+# Clone the repository
+git clone https://github.com/vakovalskii/LocalDesk.git
+cd LocalDesk
+
+# Install dependencies (faster)
+bun install
+
+# Rebuild native modules for Electron
+bunx electron-rebuild -f -w better-sqlite3
+
+# Run in development mode
+bun run dev
+```
+
+> **Note:** Bun is significantly faster for dependency installation (~3x speedup)
 
 ### Configuration
 
