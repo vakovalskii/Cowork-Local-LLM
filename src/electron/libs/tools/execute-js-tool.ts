@@ -87,20 +87,26 @@ export async function executeJSTool(
       
       return { success: true, output };
     } else {
-      let errorMsg = `❌ Execution failed: ${result.error}\n\n`;
+      // Properly stringify error (may be object or string)
+      const err = result.error as any;
+      const errorText = typeof err === 'string' 
+        ? err 
+        : (err?.message || JSON.stringify(err, null, 2));
+      
+      let errorMsg = `❌ Execution failed: ${errorText}\n\n`;
       
       // Show truncated code for debugging
       errorMsg += `**Your code:**\n\`\`\`javascript\n${args.code.substring(0, 500)}${args.code.length > 500 ? '\n// ... truncated ...' : ''}\n\`\`\`\n\n`;
       
       // Add helpful hints based on error
-      if (result.error?.includes('not defined') || result.error?.includes('is not a function')) {
+      if (errorText?.includes('not defined') || errorText?.includes('is not a function')) {
         errorMsg += `💡 **Available APIs:**\n`;
         errorMsg += `- **fs**: readFileSync, writeFileSync, existsSync, readdirSync\n`;
         errorMsg += `- **path**: join, resolve, dirname, basename, extname\n`;
         errorMsg += `- **console**: log, error, warn, info\n`;
         errorMsg += `- **Built-in**: JSON, Math, Date, String, Array, Object\n`;
         errorMsg += `- **env**: Environment variables (env.CWD)\n`;
-      } else if (result.error?.includes('timeout')) {
+      } else if (errorText?.includes('timeout')) {
         errorMsg += `💡 **Hint**: Code execution timed out. Try:\n`;
         errorMsg += `- Simplifying your code\n`;
         errorMsg += `- Avoiding infinite loops\n`;
