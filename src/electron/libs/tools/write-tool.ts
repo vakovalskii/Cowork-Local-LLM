@@ -10,8 +10,8 @@ import type { ToolDefinition, ToolResult, ToolExecutionContext } from './base-to
 export const WriteToolDefinition: ToolDefinition = {
   type: "function",
   function: {
-    name: "Write",
-    description: "Create a new file with the given content. Use this to create new files. IMPORTANT: If the file already exists, choose a different filename (e.g., add a number suffix or timestamp) instead of trying to edit it.",
+    name: "write_file",
+    description: "Create a new file with given content. If file already exists, choose different filename (add number suffix or timestamp) instead of editing.",
     parameters: {
       type: "object",
       properties: {

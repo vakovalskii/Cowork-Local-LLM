@@ -9,8 +9,8 @@ import type { ToolDefinition, ToolResult, ToolExecutionContext } from './base-to
 export const ReadToolDefinition: ToolDefinition = {
   type: "function",
   function: {
-    name: "Read",
-    description: "Read the contents of a file. Use this to view file contents before editing or analyzing code.",
+    name: "read_file",
+    description: "Read the contents of a text file. Use to view file contents before editing or analyzing code.",
     parameters: {
       type: "object",
       properties: {

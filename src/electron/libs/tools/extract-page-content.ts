@@ -23,8 +23,8 @@ export interface PageContent {
 export const ExtractPageContentToolDefinition: ToolDefinition = {
   type: "function",
   function: {
-    name: "ExtractPageContent",
-    description: "Extract full detailed content from specific web pages. Use AFTER WebSearch to get complete page content from URLs found in search results. Returns full page content in readable format. Best for deep analysis of specific pages and extracting structured data. Note: Only available when using Tavily as the web search provider. When using Z.AI as the web search provider, use ZaiReader tool instead.",
+    name: "extract_page",
+    description: "Extract full content from web pages. Use AFTER search_web to get complete page content from URLs. Returns full page content in readable format. Only available with Tavily provider.",
     parameters: {
       type: "object",
       properties: {

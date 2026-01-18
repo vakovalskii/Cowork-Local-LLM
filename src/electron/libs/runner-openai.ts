@@ -369,7 +369,9 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
         let toolCalls: any[] = [];
         let currentToolCall: any = null;
         let contentStarted = false;
-        let fullStreamResponse: any[] = []; // Collect all chunks for logging
+        
+        // OPTIMIZATION: Only track metadata, not all chunks (memory leak!)
+        let streamMetadata: { id?: string; model?: string; created?: number; finishReason?: string; usage?: any } = {};
 
         // Process stream
         for await (const chunk of stream) {
@@ -378,8 +380,18 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
             break;
           }
 
-          // Collect full chunk for logging
-          fullStreamResponse.push(chunk);
+          // Track metadata from first/last chunks (lightweight)
+          if (!streamMetadata.id && chunk.id) {
+            streamMetadata.id = chunk.id;
+            streamMetadata.model = chunk.model;
+            streamMetadata.created = chunk.created;
+          }
+          if (chunk.choices?.[0]?.finish_reason) {
+            streamMetadata.finishReason = chunk.choices[0].finish_reason;
+          }
+          if (chunk.usage) {
+            streamMetadata.usage = chunk.usage;
+          }
 
           const delta = chunk.choices[0]?.delta;
           
@@ -450,33 +462,6 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
           });
         }
 
-        // Extract metadata from chunks
-        const firstChunk = fullStreamResponse[0] || {};
-        const lastChunk = fullStreamResponse[fullStreamResponse.length - 1] || {};
-        const finishChunk = fullStreamResponse.find(c => c.choices?.[0]?.finish_reason) || {};
-        
-        // Build unified raw JSON response
-        const rawJsonResponse = {
-          id: firstChunk.id || null,
-          object: "chat.completion",
-          created: firstChunk.created || null,
-          model: firstChunk.model || null,
-          choices: [
-            {
-              index: 0,
-              message: {
-                role: "assistant",
-                content: assistantMessage || null,
-                tool_calls: toolCalls.length > 0 ? toolCalls : null
-              },
-              finish_reason: finishChunk.choices?.[0]?.finish_reason || null,
-              logprobs: null
-            }
-          ],
-          usage: lastChunk.usage || null,
-          system_fingerprint: firstChunk.system_fingerprint || null
-        };
-        
         // Check if aborted during stream
         if (aborted) {
           console.log('[OpenAI Runner] Session aborted during streaming');
@@ -487,15 +472,13 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
           return;
         }
         
-        // Log unified raw JSON response
-        console.log('[OpenAI Runner] ===== RAW JSON RESPONSE =====');
-        console.log(JSON.stringify(rawJsonResponse, null, 2));
-        console.log('[OpenAI Runner] ===== END RAW JSON RESPONSE =====');
+        // OPTIMIZATION: Lightweight logging (no JSON.stringify on large objects)
+        console.log(`[OpenAI Runner] Stream complete: ${assistantMessage.length} chars, ${toolCalls.length} tools, finish: ${streamMetadata.finishReason}`);
         
         // Accumulate token usage
-        if (rawJsonResponse.usage) {
-          totalInputTokens += rawJsonResponse.usage.prompt_tokens || 0;
-          totalOutputTokens += rawJsonResponse.usage.completion_tokens || 0;
+        if (streamMetadata.usage) {
+          totalInputTokens += streamMetadata.usage.prompt_tokens || 0;
+          totalOutputTokens += streamMetadata.usage.completion_tokens || 0;
         }
         
         // If no tool calls, we're done

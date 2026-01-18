@@ -9,8 +9,8 @@ import type { ToolDefinition, ToolResult, ToolExecutionContext } from './base-to
 export const GlobToolDefinition: ToolDefinition = {
   type: "function",
   function: {
-    name: "Glob",
-    description: "Search for files matching a pattern. Use this to find files by name or extension.",
+    name: "search_files",
+    description: "Search for files matching a glob pattern. Find files by name or extension.",
     parameters: {
       type: "object",
       properties: {

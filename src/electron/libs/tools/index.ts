@@ -23,11 +23,11 @@ export * from './zai-reader.js';
 // Memory tool
 export * from './memory-tool.js';
 
-// Execute JS tool
+// Execute JS tool (WASM QuickJS sandbox - works out of the box)
 export * from './execute-js-tool.js';
 
-// Install Package tool
-export * from './install-package-tool.js';
+// ReadDocument tool (PDF + DOCX)
+export * from './read-document-tool.js';
 
 // Tool definitions array
 import { BashToolDefinition } from './bash-tool.js';
@@ -41,7 +41,7 @@ import { ExtractPageContentToolDefinition } from './extract-page-content.js';
 import { ZaiReaderToolDefinition } from './zai-reader.js';
 import { MemoryToolDefinition } from './memory-tool.js';
 import { ExecuteJSToolDefinition } from './execute-js-tool.js';
-import { InstallPackageToolDefinition } from './install-package-tool.js';
+import { ReadDocumentToolDefinition } from './read-document-tool.js';
 
 export const ALL_TOOL_DEFINITIONS = [
   BashToolDefinition,
@@ -55,6 +55,5 @@ export const ALL_TOOL_DEFINITIONS = [
   ZaiReaderToolDefinition,
   MemoryToolDefinition,
   ExecuteJSToolDefinition,
-  InstallPackageToolDefinition
+  ReadDocumentToolDefinition
 ];
-

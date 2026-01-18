@@ -1,3 +1,7 @@
+// External module declarations
+declare module 'pdf-parse';
+declare module 'mammoth';
+
 type Statistics = {
     cpuUsage: number;
     ramUsage: number;
@@ -11,6 +15,13 @@ type StaticData = {
 }
 
 type UnsubscribeFunction = () => void;
+
+type BuildInfo = {
+    version: string;
+    commit: string;
+    commitShort: string;
+    buildTime: string;
+}
 
 type FileItem = {
     name: string;
@@ -29,6 +40,7 @@ type EventPayloadMapping = {
     "open-path-in-finder": { success: boolean; error?: string };
     "read-memory": string;
     "write-memory": void;
+    "get-build-info": BuildInfo;
 }
 
 interface Window {

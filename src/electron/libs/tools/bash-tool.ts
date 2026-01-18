@@ -11,8 +11,8 @@ const execAsync = promisify(exec);
 export const BashToolDefinition: ToolDefinition = {
   type: "function",
   function: {
-    name: "Bash",
-    description: "Execute a shell command in the working directory. IMPORTANT: Use Windows commands (dir, type, cd) on Windows, or Unix commands (ls, cat, cd) on Unix. The system will run it in the appropriate shell (PowerShell on Windows, bash on Unix).",
+    name: "run_command",
+    description: "Execute a shell command in the working directory. Use Windows commands (dir, type, cd) on Windows, or Unix commands (ls, cat, cd) on Unix. The system runs in the appropriate shell (PowerShell on Windows, bash on Unix).",
     parameters: {
       type: "object",
       properties: {

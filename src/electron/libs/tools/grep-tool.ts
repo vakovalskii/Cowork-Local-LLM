@@ -11,8 +11,8 @@ const execAsync = promisify(exec);
 export const GrepToolDefinition: ToolDefinition = {
   type: "function",
   function: {
-    name: "Grep",
-    description: "Search for text content inside files. Use this to find specific code or text.",
+    name: "search_text",
+    description: "Search for text content inside files. Find specific code or text patterns.",
     parameters: {
       type: "object",
       properties: {

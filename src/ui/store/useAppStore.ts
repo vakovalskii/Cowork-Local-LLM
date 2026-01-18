@@ -207,6 +207,15 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       case "stream.message": {
         const { sessionId, message } = event.payload;
+        
+        // OPTIMIZATION: Don't store stream_event messages in store
+        // They are only used for live streaming preview in App.tsx (partialMessage)
+        // Storing them causes 1000+ state updates per response
+        if ((message as any).type === 'stream_event') {
+          // Skip - handled by handlePartialMessages in App.tsx
+          break;
+        }
+        
         set((state) => {
           const existing = state.sessions[sessionId] ?? createSession(sessionId);
           return {

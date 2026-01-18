@@ -62,8 +62,8 @@ export interface ZaiReaderError {
 export const ZaiReaderToolDefinition: ToolDefinition = {
   type: "function",
   function: {
-    name: "ZaiReader",
-    description: "Read and parse the content of a web page using Z.AI Reader API. Supports markdown or text format, cache control, image retention, and summary options. Use when you need to extract full content from a specific web page. This tool is available only when Z.AI Reader is enabled in Settings.",
+    name: "read_page",
+    description: "Read and parse web page content using Z.AI Reader API. Supports markdown/text format, cache control, image retention, summary options. Available only when Z.AI Reader is enabled.",
     parameters: {
       type: "object",
       properties: {

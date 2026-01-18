@@ -2,7 +2,7 @@
 
 # LocalDesk
 
-[![Version](https://img.shields.io/badge/version-0.0.3-blue.svg)](https://github.com/vakovalskii/LocalDesk/releases)
+[![Version](https://img.shields.io/badge/version-0.0.5-blue.svg)](https://github.com/vakovalskii/LocalDesk/releases)
 [![Platform](https://img.shields.io/badge/platform-%20Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/vakovalskii/LocalDesk)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -15,17 +15,14 @@
 
 ---
 
-
-https://github.com/user-attachments/assets/f60afb47-05cc-4578-9550-a319f1eae7df
-
-
 ## ✨ Features
 
 ### Core Capabilities
 - ✅ **OpenAI SDK** — full API control, compatible with any OpenAI-compatible endpoint
 - ✅ **Local Models** — vLLM, Ollama, LM Studio support
-- ✅ **Modular Tools** — each tool in separate file for easy maintenance
-- ✅ **Web Search** — Tavily integration for internet search (optional)
+- ✅ **WASM Sandbox** — secure JavaScript execution via QuickJS (no Node.js required)
+- ✅ **Document Support** — PDF and DOCX text extraction (bundled, works out of the box)
+- ✅ **Web Search** — Tavily and Z.AI integration for internet search
 - ✅ **Security** — directory sandboxing for safe file operations
 - ✅ **Cross-platform** — Windows, macOS, Linux with proper shell commands
 
@@ -39,22 +36,14 @@ https://github.com/user-attachments/assets/f60afb47-05cc-4578-9550-a319f1eae7df
 
 ### Advanced Features
 - ✅ **Memory System** — persistent storage of user preferences in `~/.localdesk/memory.md`
-- ✅ **Dynamic Memory** — automatic reload after memory updates within same session
-- ✅ **Memory Editor** — edit memory directly in settings with reload/open folder buttons
 - ✅ **Token Tracking** — display input/output tokens and API duration
-- ✅ **Request Logging** — full raw JSON request/response logs for debugging
-- ✅ **JavaScript Sandbox** — isolated Node.js VM for executing JS code within workspace
-- ✅ **Package Management** — install npm packages into isolated sandbox (`.localdesk-sandbox/`)
-- ✅ **PDF Support** — extract text from PDF files using `pdf-parse` library
-- ✅ **Optional Workspace** — start empty chats without workspace folder, add it later when needed
+- ✅ **Optimized Streaming** — requestAnimationFrame-based UI updates (60fps)
 - ✅ **Stop Streaming** — interrupt LLM responses at any time
 
 ## 🚀 Quick Start
 
 ### Installation
 
-#### macOS / Linux
-
 ```bash
 # Clone the repository
 git clone https://github.com/vakovalskii/LocalDesk.git
@@ -66,88 +55,8 @@ npm install
 # Rebuild native modules for Electron
 npx electron-rebuild -f -w better-sqlite3
 
-# Compile Electron code (required before first run)
-npm run transpile:electron
-
 # Run in development mode
 npm run dev
-```
-
-#### Windows (PowerShell)
-
-```powershell
-# Clone the repository
-git clone https://github.com/vakovalskii/LocalDesk.git
-cd LocalDesk
-
-# Install dependencies
-npm install
-
-# Rebuild native modules for Electron
-npx electron-rebuild -f -w better-sqlite3
-
-# Compile Electron code (required before first run)
-npm run transpile:electron
-
-# Run in development mode
-npm run dev
-```
-
-### Common Issues
-
-<details>
-<summary><b>macOS: "Cannot find module @rollup/rollup-darwin-arm64"</b></summary>
-
-This is a known npm bug with optional dependencies:
-```bash
-rm -rf node_modules package-lock.json
-npm install
-npx electron-rebuild -f -w better-sqlite3
-npm run transpile:electron
-```
-</details>
-
-<details>
-<summary><b>All platforms: "better-sqlite3 was compiled against a different Node.js version"</b></summary>
-
-Rebuild native modules for Electron's Node.js version:
-```bash
-npx electron-rebuild -f -w better-sqlite3
-npm run transpile:electron
-```
-</details>
-
-<details>
-<summary><b>Windows: Build tools errors</b></summary>
-
-Install Windows build tools:
-```powershell
-npm install --global windows-build-tools
-# or install Visual Studio Build Tools manually
-```
-</details>
-
-### Running in Development
-
-**Automatic (recommended):**
-```bash
-npm run dev
-```
-
-**Manual (two terminals):**
-
-Terminal 1 - React Dev Server:
-```bash
-npm run dev:react
-```
-
-Terminal 2 - Electron (after Vite starts):
-```bash
-# macOS/Linux
-NODE_ENV=development npx electron .
-
-# Windows PowerShell
-$env:NODE_ENV='development'; npx electron .
 ```
 
 ### Configuration
@@ -155,12 +64,9 @@ $env:NODE_ENV='development'; npx electron .
 1. Click **Settings** (⚙️) in the app
 2. Configure your API:
    - **API Key** — your key (or `dummy-key` for local models)
-   - **Base URL** — API endpoint
+   - **Base URL** — API endpoint (must include `/v1`)
    - **Model Name** — model identifier
    - **Temperature** — 0.0-2.0 (default: 0.3)
-   - **Permission Mode** — `ask` (confirm each tool) or `default` (auto-execute)
-   - **Tavily API Key** (optional) — for web search
-   - **Enable Memory** — toggle persistent memory system
 3. Click **Save Settings**
 
 ### Example Configurations
@@ -169,19 +75,8 @@ $env:NODE_ENV='development'; npx electron .
 ```json
 {
   "apiKey": "dummy-key",
-  "baseUrl": "http://localhost:8000",
-  "model": "qwen3-30b-a3b-instruct-2507",
-  "temperature": 0.3
-}
-```
-
-**Claude:**
-```json
-{
-  "apiKey": "sk-ant-...",
-  "baseUrl": "https://api.anthropic.com",
-  "model": "claude-sonnet-4-20250514",
-  "temperature": 0.3
+  "baseUrl": "http://localhost:8000/v1",
+  "model": "qwen3-30b-a3b-instruct-2507"
 }
 ```
 
@@ -189,97 +84,50 @@ $env:NODE_ENV='development'; npx electron .
 ```json
 {
   "apiKey": "sk-...",
-  "baseUrl": "https://api.openai.com",
-  "model": "gpt-4",
-  "temperature": 0.3
+  "baseUrl": "https://api.openai.com/v1",
+  "model": "gpt-4"
 }
-```
-
-## 🦙 Local Model Setup (vLLM)
-
-```bash
-vllm serve qwen3-30b-a3b-instruct-2507 \
-  --port 8000 \
-  --enable-auto-tool-choice \
-  --tool-call-parser hermes
-```
-
-**Requirements:**
-- OpenAI-compatible API (`/v1/chat/completions`)
-- Function calling support
-- Streaming support
-
-## 🧠 Memory System
-
-The Memory feature allows the agent to remember user preferences and context across sessions:
-
-1. **Enable in Settings:** Toggle "Enable Memory" in Settings (⚙️)
-2. **Automatic Storage:** Agent proactively notes important information from conversations
-3. **Manual Commands:** Ask agent to "remember" or "forget" specific things
-4. **Edit Memory:** View and edit `memory.md` directly in Settings
-5. **Dynamic Reload:** Memory updates are immediately available in the current session
-
-**Memory Location:** `~/.localdesk/memory.md`
-
-**Example Usage:**
-```
-User: "Remember that I prefer Python over JavaScript"
-Agent: [Stores in memory.md]
-
-User: "What language do I prefer?"
-Agent: "You prefer Python over JavaScript" ✅
 ```
 
 ## 🛠️ Available Tools
 
-### File Operations
-- **Bash** — execute shell commands (PowerShell/bash)
-- **Read** — read file contents (text files only)
-- **Write** — create new files (prevents overwriting existing files)
-- **Edit** — modify files (search & replace)
+All tools follow `snake_case` naming convention (`verb_noun` pattern):
 
-### Search Tools
-- **Glob** — find files by pattern (supports `**/*.pdf`, `*.js`, etc.)
-- **Grep** — search text in files
+### File Operations
+| Tool | Description |
+|------|-------------|
+| `run_command` | Execute shell commands (PowerShell/bash) |
+| `read_file` | Read text file contents |
+| `write_file` | Create new files |
+| `edit_file` | Modify files (search & replace) |
+| `search_files` | Find files by glob pattern (`*.pdf`, `src/**/*.ts`) |
+| `search_text` | Search text content in files (grep) |
+| `read_document` | Extract text from PDF/DOCX (max 10MB) |
 
 ### Code Execution
-- **ExecuteJS** — run JavaScript code in isolated Node.js VM sandbox
-  - Access to: `fs`, `path`, `crypto`, `console`, `__dirname`
-  - Can `require()` built-in modules and installed packages
-  - Isolated to workspace folder for security
-- **InstallPackage** — install npm packages into `.localdesk-sandbox/` directory
-  - Example: `InstallPackage(['lodash', 'axios', 'pdf-parse'])`
+| Tool | Description |
+|------|-------------|
+| `execute_js` | Run JavaScript in secure WASM sandbox (QuickJS) |
+
+**execute_js** features:
+- Available globals: `fs`, `path`, `console`, `JSON`, `Math`, `Date`, `__dirname`
+- No imports needed — use globals directly
+- No TypeScript, no async/await, no npm packages
+- Use `return` statement to output results
 
 ### Web Tools (Optional)
-- **WebSearch** — search the web using Tavily API
-- **ExtractPageContent** — extract full content from web pages
+| Tool | Description |
+|------|-------------|
+| `search_web` | Search the internet (Tavily/Z.AI) |
+| `extract_page` | Extract full page content (Tavily only) |
+| `read_page` | Read web page content (Z.AI Reader) |
 
-### Memory Management
-- **Memory** — persistent storage for user preferences and context
-  - `create` — initialize memory file
-  - `append` — add new information
-  - `delete` — remove specific entries
-  - `read` — view current memory
+### Memory (Optional)
+| Tool | Description |
+|------|-------------|
+| `manage_memory` | Store/read persistent user preferences |
 
-> **Note:** Web tools require Tavily API key in Settings. Memory tool requires "Enable Memory" toggle.  
-> **Security:** ExecuteJS and file operations are sandboxed to the workspace folder only.
-
-## 📦 Building
-
-### macOS (DMG)
-```bash
-npm run dist:mac
-```
-
-### Windows (EXE)
-```bash
-npm run dist:win
-```
-
-### Linux (AppImage)
-```bash
-npm run dist:linux
-```
+> **Security:** All file operations are sandboxed to the workspace folder only.
 
 ## 🏗️ Project Structure
 
@@ -290,52 +138,56 @@ src/
 │   ├── ipc-handlers.ts         # IPC communication
 │   └── libs/
 │       ├── runner-openai.ts    # OpenAI API runner
-│       ├── prompt-loader.ts    # Prompt template loader
 │       ├── tools-executor.ts   # Tool execution logic
+│       ├── container/
+│       │   └── quickjs-sandbox.ts  # WASM sandbox
 │       ├── prompts/
-│       │   ├── system.txt      # System prompt template
-│       │   └── initial_prompt.txt # Initial prompt template
-│       └── tools/              # Modular tool definitions
-│           ├── base-tool.ts    # Base interfaces
-│           ├── bash-tool.ts    # Shell execution
-│           ├── read-tool.ts    # File reading
-│           ├── write-tool.ts   # File creation
-│           ├── edit-tool.ts    # File editing
-│           ├── glob-tool.ts    # File search
-│           ├── grep-tool.ts    # Text search
-│           ├── execute-js-tool.ts # JS sandbox execution
-│           ├── install-package-tool.ts # npm package installer
-│           ├── web-search.ts   # Web search (Tavily)
-│           ├── extract-page-content.ts # Page extraction
-│           └── memory-tool.ts  # Memory management
+│       │   └── system.txt      # System prompt template
+│       └── tools/              # Tool definitions (snake_case)
+│           ├── bash-tool.ts        # run_command
+│           ├── read-tool.ts        # read_file
+│           ├── write-tool.ts       # write_file
+│           ├── edit-tool.ts        # edit_file
+│           ├── glob-tool.ts        # search_files
+│           ├── grep-tool.ts        # search_text
+│           ├── execute-js-tool.ts  # execute_js
+│           ├── read-document-tool.ts # read_document
+│           ├── web-search.ts       # search_web
+│           ├── extract-page-content.ts # extract_page
+│           ├── zai-reader.ts       # read_page
+│           └── memory-tool.ts      # manage_memory
 └── ui/                         # React frontend
     ├── App.tsx                 # Main component
     ├── components/             # UI components
     └── store/                  # Zustand state management
 ```
 
+## 📦 Building
+
+```bash
+# macOS (DMG)
+npm run dist:mac
+
+# Windows (EXE)
+npm run dist:win
+
+# Linux (AppImage)
+npm run dist:linux
+```
+
 ## 🔐 Data Storage
 
 ### Application Data
-**Windows:** `C:\Users\YourName\AppData\Roaming\localdesk\`  
-**macOS:** `~/Library/Application Support/localdesk/`  
-**Linux:** `~/.config/localdesk/`
+- **Windows:** `C:\Users\YourName\AppData\Roaming\localdesk\`
+- **macOS:** `~/Library/Application Support/localdesk/`
+- **Linux:** `~/.config/localdesk/`
 
 Files:
 - `sessions.db` — SQLite database with chat history
 - `api-settings.json` — API configuration
 
-### Global Data (All Platforms)
-- `~/.localdesk/logs/` — raw JSON request/response logs (debugging)
-- `~/.localdesk/memory.md` — persistent memory storage (user preferences, context)
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a branch (`git checkout -b feature/amazing-feature`)
-3. Commit (`git commit -m 'Add feature'`)
-4. Push (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+### Global Data
+- `~/.localdesk/memory.md` — persistent memory storage
 
 ## 📄 License
 
@@ -346,7 +198,5 @@ MIT License - see [LICENSE](LICENSE) file for details
 <div align="center">
 
 **Made with ❤️ by [Valerii Kovalskii](https://github.com/vakovalskii)**
-
-Based on [DevAgentForge/Claude-Cowork](https://github.com/DevAgentForge/Claude-Cowork)
 
 </div>

@@ -19,7 +19,7 @@ import { ExtractPageContentTool } from './tools/extract-page-content.js';
 import { ZaiReaderTool } from './tools/zai-reader.js';
 import { executeMemoryTool } from './tools/memory-tool.js';
 import { executeJSTool } from './tools/execute-js-tool.js';
-import { installPackageTool } from './tools/install-package-tool.js';
+import { executeReadDocumentTool } from './tools/read-document-tool.js';
 
 export { ToolResult };
 
@@ -118,7 +118,7 @@ export class ToolExecutor {
     const context = this.getContext();
 
     // Check if cwd is valid for file operations
-    const fileOperationTools = ['Write', 'Edit', 'Bash', 'Read', 'ExecuteJS', 'InstallPackage'];
+    const fileOperationTools = ['write_file', 'edit_file', 'run_command', 'read_file', 'execute_js', 'read_document'];
     if (fileOperationTools.includes(toolName)) {
       if (!this.cwd || this.cwd === '.' || this.cwd === '') {
         return {
@@ -135,41 +135,41 @@ export class ToolExecutor {
 
     try {
       switch (toolName) {
-        case 'Bash':
+        case 'run_command':
           return await executeBashTool(args as any, context);
         
-        case 'Read':
+        case 'read_file':
           return await executeReadTool(args as any, context);
         
-        case 'Write':
+        case 'write_file':
           return await executeWriteTool(args as any, context);
         
-        case 'Edit':
+        case 'edit_file':
           return await executeEditTool(args as any, context);
         
-        case 'Glob':
+        case 'search_files':
           return await executeGlobTool(args as any, context);
         
-        case 'Grep':
+        case 'search_text':
           return await executeGrepTool(args as any, context);
         
-        case 'WebSearch':
+        case 'search_web':
           return await this.executeWebSearch(args);
         
-        case 'ExtractPageContent':
+        case 'extract_page':
           return await this.executeExtractPage(args);
         
-        case 'ZaiReader':
+        case 'read_page':
           return await this.executeZaiReader(args);
         
-        case 'Memory':
+        case 'manage_memory':
           return await executeMemoryTool(args as any, context);
         
-        case 'ExecuteJS':
+        case 'execute_js':
           return await executeJSTool(args as any, context);
         
-        case 'InstallPackage':
-          return await installPackageTool(args as any, context);
+        case 'read_document':
+          return await executeReadDocumentTool(args as any, context);
         
         default:
           return {

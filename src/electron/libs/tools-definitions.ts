@@ -12,12 +12,12 @@ export function getTools(settings: ApiSettings | null) {
   
   // Filter out Memory tool if not enabled
   if (!settings?.enableMemory) {
-    tools = tools.filter(tool => tool.function.name !== 'Memory');
+    tools = tools.filter(tool => tool.function.name !== 'manage_memory');
   }
   
   // Filter out ZaiReader if not enabled or Z.AI API key not provided
   if (!settings?.enableZaiReader || !settings?.zaiApiKey) {
-    tools = tools.filter(tool => tool.function.name !== 'ZaiReader');
+    tools = tools.filter(tool => tool.function.name !== 'read_page');
   }
   
   return tools;

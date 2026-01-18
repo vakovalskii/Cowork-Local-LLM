@@ -163,9 +163,12 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
                 type="text"
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="e.g., https://api.example.com"
+                placeholder="e.g., https://api.example.com, http://localhost:8000/v1"
                 className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-ink-900/20 transition-all"
               />
+              <p className="mt-1 text-xs text-ink-500">
+                OpenAI-compatible API endpoint (vLLM, Ollama, LM Studio, etc.)
+              </p>
             </div>
 
             <div>
@@ -176,7 +179,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
                 type="text"
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
-                placeholder="e.g., claude-3-5-sonnet-20241022"
+                placeholder="e.g., qwen3-30b-a3b-instruct-2507"
                 className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-ink-900/20 transition-all"
               />
             </div>

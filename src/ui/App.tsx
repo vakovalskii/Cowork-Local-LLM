@@ -9,6 +9,7 @@ import { SettingsModal } from "./components/SettingsModal";
 import { FileBrowser } from "./components/FileBrowser";
 import { PromptInput, usePromptActions } from "./components/PromptInput";
 import { MessageCard } from "./components/EventCard";
+import { AppFooter } from "./components/AppFooter";
 import MDContent from "./render/markdown";
 
 function App() {
@@ -338,8 +339,8 @@ function App() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-8 pb-40 pt-6">
-          <div className="mx-auto w-full">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden px-8 pb-40 pt-6">
+          <div className="mx-auto w-full max-w-4xl min-w-0">
             {messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <div className="text-lg font-medium text-ink-700">No messages yet</div>
@@ -428,6 +429,8 @@ function App() {
           onClose={() => setShowFileBrowser(false)} 
         />
       )}
+
+      <AppFooter />
     </div>
   );
 }

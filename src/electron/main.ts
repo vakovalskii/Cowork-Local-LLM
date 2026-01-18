@@ -241,4 +241,33 @@ app.on("ready", () => {
             return { success: false, error: error.message };
         }
     });
+
+    // Handle get build info
+    ipcMainHandle("get-build-info", async () => {
+        try {
+            const buildInfoPath = join(app.getAppPath(), 'dist-electron', 'build-info.json');
+            const buildInfo = JSON.parse(await fs.readFile(buildInfoPath, 'utf-8'));
+            return buildInfo;
+        } catch (error: any) {
+            console.error('[Main] Failed to read build info:', error);
+            // Fallback to package.json version if build-info.json is missing
+            const packageJsonPath = join(app.getAppPath(), 'package.json');
+            try {
+                const packageJson = JSON.parse(await fs.readFile(packageJsonPath, 'utf-8'));
+                return {
+                    version: packageJson.version,
+                    commit: 'unknown',
+                    commitShort: 'dev',
+                    buildTime: 'unknown'
+                };
+            } catch {
+                return {
+                    version: '0.0.0',
+                    commit: 'unknown',
+                    commitShort: 'dev',
+                    buildTime: 'unknown'
+                };
+            }
+        }
+    });
 })

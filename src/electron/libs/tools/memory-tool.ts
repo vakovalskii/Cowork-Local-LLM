@@ -19,7 +19,7 @@ function getMemoryPath(): string {
 export const MemoryToolDefinition = {
   type: 'function' as const,
   function: {
-    name: 'Memory',
+    name: 'manage_memory',
     description: `Manage long-term memory by storing important information in memory.md file.
     
 IMPORTANT: Memory is stored globally in ~/.localdesk/memory.md and persists across ALL projects and sessions.

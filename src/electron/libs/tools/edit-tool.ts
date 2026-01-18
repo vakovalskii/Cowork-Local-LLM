@@ -9,8 +9,8 @@ import type { ToolDefinition, ToolResult, ToolExecutionContext } from './base-to
 export const EditToolDefinition: ToolDefinition = {
   type: "function",
   function: {
-    name: "Edit",
-    description: "Edit an existing file by replacing old content with new content. Use for modifying files.",
+    name: "edit_file",
+    description: "Edit existing file by replacing old content with new content. Use for modifying files.",
     parameters: {
       type: "object",
       properties: {

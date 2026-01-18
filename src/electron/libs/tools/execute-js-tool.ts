@@ -1,20 +1,37 @@
 /**
- * ExecuteJS Tool - Execute JavaScript code with dynamic require support
+ * ExecuteJS Tool - Execute JavaScript code in secure WASM sandbox (QuickJS)
+ * Works out of the box - no installation needed
  */
 
-import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'fs';
-import { join, resolve } from 'path';
-import { createRequire } from 'module';
+import { executeInQuickJS } from '../container/quickjs-sandbox.js';
 import type { ToolDefinition, ToolResult, ToolExecutionContext } from './base-tool.js';
-
-// Create require function for ES modules (since global require doesn't exist in ESM)
-const esmRequire = createRequire(import.meta.url);
 
 export const ExecuteJSToolDefinition: ToolDefinition = {
   type: "function",
   function: {
-    name: "ExecuteJS",
-    description: "Execute JavaScript code in a sandboxed environment. Use for data processing, calculations, file operations. Can use require() for built-in Node modules and npm packages installed via InstallPackage tool.",
+    name: "execute_js",
+    description: `Execute JavaScript code in a secure isolated WASM sandbox (QuickJS engine).
+Works out of the box - no installation needed on user's machine.
+
+**AVAILABLE GLOBALS** (no imports needed - just use directly):
+- fs.readFileSync(path) - read file content
+- fs.writeFileSync(path, data) - write file
+- fs.existsSync(path) - check if file exists  
+- fs.readdirSync(path) - list directory
+- path.join(...), path.resolve(...), path.dirname(), path.basename(), path.extname()
+- console.log(), console.error(), console.warn()
+- JSON, Math, Date, __dirname
+
+**CODE FORMAT**: Code runs inside (function(){ ... })() wrapper. Use 'return' to output results.
+
+**EXAMPLE**:
+const files = fs.readdirSync('/');
+const data = fs.readFileSync('/data.json');
+const parsed = JSON.parse(data);
+console.log('Found', files.length, 'files');
+return { count: parsed.items.length };
+
+**LIMITATIONS**: No ES modules (import/export), no TypeScript, no async/await, no fetch, no npm packages.`,
     parameters: {
       type: "object",
       properties: {
@@ -24,7 +41,7 @@ export const ExecuteJSToolDefinition: ToolDefinition = {
         },
         code: {
           type: "string",
-          description: "JavaScript code to execute. Built-in APIs: fs (readFile, writeFile, exists, listDir), path (join, resolve), console, JSON, Math, Date, __dirname. Can require(): built-in modules (fs, path, crypto, util, url, etc.) and npm packages installed with InstallPackage. IMPORTANT: Use explicit 'return' statement to return values. Example: const data = fs.readFile('file.txt'); return { success: true };"
+          description: "JavaScript code to execute. Use global fs, path, console directly (no imports). Use 'return' to output values."
         },
         timeout: {
           type: "number",
@@ -44,112 +61,62 @@ export async function executeJSTool(
 ): Promise<ToolResult> {
   const timeout = Math.min(args.timeout || 5000, 30000);
   
+  console.log('[ExecuteJS] Starting execution');
+  console.log('[ExecuteJS] Timeout:', timeout);
+  console.log('[ExecuteJS] Context CWD:', context.cwd);
+  console.log('[ExecuteJS] Code length:', args.code.length);
+  
   try {
-    console.log('[ExecuteJS] Starting execution');
-    console.log('[ExecuteJS] Timeout:', timeout);
-    console.log('[ExecuteJS] Context CWD:', context.cwd);
-    console.log('[ExecuteJS] Code length:', args.code.length);
+    const result = await executeInQuickJS(
+      args.code,
+      context.cwd,
+      context.isPathSafe,
+      timeout
+    );
     
-    // Prepare sandbox node_modules path
-    const sandboxNodeModules = join(context.cwd, '.localdesk-sandbox', 'node_modules');
-    
-    // Create custom require for sandbox modules
-    // Use esmRequire as fallback since global require doesn't exist in ES modules
-    const customRequire = existsSync(sandboxNodeModules) 
-      ? createRequire(join(sandboxNodeModules, 'package.json'))
-      : esmRequire;
-    
-    // Prepare custom console
-    const output: string[] = [];
-    const customConsole = {
-      log: (...args: any[]) => {
-        const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ');
-        output.push(msg);
-        console.log('[Sandbox]', msg);
-      },
-      error: (...args: any[]) => {
-        const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ');
-        output.push(`ERROR: ${msg}`);
-        console.error('[Sandbox]', msg);
-      },
-      warn: (...args: any[]) => {
-        const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ');
-        output.push(`WARN: ${msg}`);
-        console.warn('[Sandbox]', msg);
-      },
-    };
-    
-    // Execute code with require, __dirname, and console available
-    // Wrap user code to make require, __dirname, console available as const variables
-    const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-    const wrappedCode = `
-      const require = arguments[0];
-      const __dirname = arguments[1];
-      const console = arguments[2];
+    if (result.success) {
+      let output = '✅ Code executed successfully (QuickJS WASM Sandbox)\n\n';
       
-      // User code starts here
-      ${args.code}
-    `;
-    const fn = new AsyncFunction(wrappedCode);
-    
-    // Run with timeout, passing require, __dirname, console as arguments
-    const result = await Promise.race([
-      fn.call(null, customRequire, context.cwd, customConsole),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Execution timeout')), timeout))
-    ]);
-    
-    let responseOutput = '✅ Code executed successfully\n\n';
-    
-    if (output.length > 0) {
-      responseOutput += '**Console Output:**\n```\n' + output.join('\n') + '\n```\n\n';
-    }
-    
-    if (result !== undefined) {
-      responseOutput += '**Result:**\n```json\n' + JSON.stringify(result, null, 2) + '\n```';
-    }
-    
-    return {
-      success: true,
-      output: responseOutput
-    };
-    
-  } catch (error: any) {
-    console.error('[ExecuteJS] Error:', error);
-    console.error('[ExecuteJS] Code that failed:', args.code);
-    
-    // Provide helpful error message with code snippet
-    let errorMsg = `❌ Execution failed: ${error.message}\n\n`;
-    
-    // Show more code for syntax errors
-    const maxCodeLength = error.message.includes('Unexpected token') ? 800 : 500;
-    errorMsg += `**Your code:**\n\`\`\`javascript\n${args.code.substring(0, maxCodeLength)}${args.code.length > maxCodeLength ? '\n// ... truncated ...' : ''}\n\`\`\`\n\n`;
-    
-    // Add specific hints for common errors
-    if (error.message.includes('Unexpected token')) {
-      errorMsg += `💡 **Hint**: Syntax error. Check:\n`;
-      errorMsg += `- Unclosed parentheses, brackets, or braces\n`;
-      errorMsg += `- Missing 'return' statement before async operations\n`;
-      errorMsg += `- Incorrect use of arrow functions or promises\n`;
-      errorMsg += `- Try breaking complex code into smaller ExecuteJS calls\n`;
-    } else if (error.message.includes('is not a function')) {
-      const match = error.message.match(/(\w+) is not a function/);
-      if (match) {
-        errorMsg += `💡 **Hint**: \`${match[1]}\` is not a function. Check:\n`;
-        errorMsg += `- Variable name (pdf-parse exports default as function: \`const pdf = require('pdf-parse')\`)\n`;
-        errorMsg += `- Module installed correctly (use InstallPackage first)\n`;
-        errorMsg += `- Typos in function/variable names\n`;
+      if (result.logs.length > 0) {
+        output += '**Console Output:**\n```\n' + result.logs.join('\n') + '\n```\n\n';
       }
-    } else if (error.message.includes('Cannot find module')) {
-      errorMsg += `💡 **Hint**: Module not found. Use InstallPackage(['module-name']) before require().\n`;
-    } else if (error.message.includes('cb') && error.message.includes('function')) {
-      errorMsg += `💡 **Hint**: Use SYNC methods (fs.readFileSync, not fs.readFile).\n`;
-    } else if (error.message.includes('ENOENT')) {
-      errorMsg += `💡 **Hint**: File not found. Use path.join(__dirname, 'filename') to get correct path.\n`;
+      
+      if (result.output) {
+        output += '**Result:**\n```json\n' + result.output + '\n```';
+      }
+      
+      return { success: true, output };
+    } else {
+      let errorMsg = `❌ Execution failed: ${result.error}\n\n`;
+      
+      // Show truncated code for debugging
+      errorMsg += `**Your code:**\n\`\`\`javascript\n${args.code.substring(0, 500)}${args.code.length > 500 ? '\n// ... truncated ...' : ''}\n\`\`\`\n\n`;
+      
+      // Add helpful hints based on error
+      if (result.error?.includes('not defined') || result.error?.includes('is not a function')) {
+        errorMsg += `💡 **Available APIs:**\n`;
+        errorMsg += `- **fs**: readFileSync, writeFileSync, existsSync, readdirSync\n`;
+        errorMsg += `- **path**: join, resolve, dirname, basename, extname\n`;
+        errorMsg += `- **console**: log, error, warn, info\n`;
+        errorMsg += `- **Built-in**: JSON, Math, Date, String, Array, Object\n`;
+        errorMsg += `- **env**: Environment variables (env.CWD)\n`;
+      } else if (result.error?.includes('timeout')) {
+        errorMsg += `💡 **Hint**: Code execution timed out. Try:\n`;
+        errorMsg += `- Simplifying your code\n`;
+        errorMsg += `- Avoiding infinite loops\n`;
+        errorMsg += `- Processing less data at once\n`;
+      }
+      
+      if (result.logs.length > 0) {
+        errorMsg += `\n**Console output before error:**\n\`\`\`\n${result.logs.join('\n')}\n\`\`\``;
+      }
+      
+      return { success: false, error: errorMsg };
     }
-    
+  } catch (error: any) {
     return {
       success: false,
-      error: errorMsg
+      error: `❌ Sandbox execution failed: ${error.message}`
     };
   }
 }

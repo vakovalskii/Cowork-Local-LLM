@@ -22,8 +22,8 @@ export interface SearchResult {
 export const WebSearchToolDefinition: ToolDefinition = {
   type: "function",
   function: {
-    name: "WebSearch",
-    description: "Search the web for real-time information - USE AS LAST RESORT. ALWAYS try Grep, Glob, and Read tools FIRST before using this tool. This tool searches the INTERNET, not your local repository. Use ONLY when information is NOT in the local codebase (external library documentation, current events, news, public APIs, general knowledge).",
+    name: "search_web",
+    description: "Search the web for real-time information. USE AS LAST RESORT - try search_text, search_files, read_file FIRST. This searches the INTERNET, not local files. Use for external documentation, current events, news, public APIs.",
     parameters: {
       type: "object",
       properties: {

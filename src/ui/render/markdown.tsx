@@ -59,8 +59,8 @@ export default function MDContent({ text }: { text: string }) {
         },
         // Markdown table components with borders
         table: (props) => (
-          <div className="mt-3 overflow-x-auto rounded-lg border border-ink-900/20 bg-surface-tertiary">
-            <table className="w-full border-collapse text-sm" {...props} />
+          <div className="mt-3 overflow-x-auto rounded-lg border border-ink-900/20 bg-surface-tertiary" style={{ maxWidth: '100%' }}>
+            <table className="border-collapse text-sm whitespace-nowrap" {...props} />
           </div>
         ),
         thead: (props) => (
