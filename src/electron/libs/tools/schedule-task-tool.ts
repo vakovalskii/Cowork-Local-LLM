@@ -31,20 +31,23 @@ export const ScheduleTaskToolDefinition: ToolDefinition = {
 - delete: Remove a scheduled task
 
 **Schedule Formats**:
-- "1m", "5m", "30m" - Run once after X minutes
-- "1h", "2h", "12h" - Run once after X hours
-- "1d", "7d" - Run once after X days
-- "every 10m" - Repeat every 10 minutes
-- "every 1h" - Repeat every hour
-- "every 1d" - Repeat every day
-- "daily 09:00" - Run daily at 9:00 AM
-- "daily 14:30" - Run daily at 2:30 PM
-- "2026-01-20 15:30" - Run at specific date/time (format: YYYY-MM-DD HH:MM)
+- "1m", "5m", "30m" - Run ONCE after X minutes (one-time only)
+- "1h", "2h", "12h" - Run ONCE after X hours (one-time only)
+- "1d", "7d" - Run ONCE after X days (one-time only)
+- "every 10m" - REPEAT every 10 minutes
+- "every 1h" - REPEAT every hour
+- "every 1d" - REPEAT every day
+- "daily 09:00" - REPEAT daily at 9:00 AM
+- "daily 14:30" - REPEAT daily at 2:30 PM
+- "2026-01-20 15:30" - Run ONCE at specific date/time (format: YYYY-MM-DD HH:MM)
+
+**IMPORTANT**: Use "1m", "1h", "1d" for ONE-TIME reminders. Use "every X" or "daily HH:MM" for RECURRING tasks.
 
 **Examples**:
-- Reminder: schedule_task with operation="create", title="Meeting", schedule="30m", notifyBefore=5
-- Daily summary: schedule_task with operation="create", title="Daily News", prompt="Summarize today's AI news", schedule="daily 09:00"
-- Monitor: schedule_task with operation="create", title="Check logs", prompt="Check error logs", schedule="every 1h"
+- One-time reminder in 30 minutes: schedule="30m"
+- Recurring reminder every hour: schedule="every 1h"
+- Daily summary at 9 AM: schedule="daily 09:00" with prompt
+- One-time reminder at specific time: schedule="2026-01-20 15:30"
 
 **Notifications**:
 - Set notifyBefore (in minutes) to get a notification before task execution

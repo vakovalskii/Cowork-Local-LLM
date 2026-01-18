@@ -100,14 +100,26 @@ export class SchedulerService {
     console.log(`[Scheduler] Executing task: ${task.title} (${task.id})`);
 
     try {
-      // Send notification about task execution
-      this.sendNotification(
-        `Executing: ${task.title}`,
-        task.prompt ? 'Running scheduled prompt...' : 'Task reminder'
-      );
+      // If task has a prompt, execute it and show status notifications
+      if (task.prompt) {
+        this.sendNotification(
+          `Executing: ${task.title}`,
+          'Running scheduled prompt...'
+        );
 
-      // Execute the task callback (will run the prompt if provided)
-      await this.onTaskExecute(task);
+        await this.onTaskExecute(task);
+
+        this.sendNotification(
+          `Completed: ${task.title}`,
+          'Task finished successfully'
+        );
+      } else {
+        // For reminder-only tasks, just show the reminder
+        this.sendNotification(
+          task.title,
+          'Reminder'
+        );
+      }
 
       // Remove from notified set
       this.notifiedTasks.delete(task.id);
@@ -126,11 +138,6 @@ export class SchedulerService {
         this.schedulerStore.updateTask(task.id, { enabled: false });
         console.log(`[Scheduler] Disabled one-time task ${task.id}`);
       }
-
-      this.sendNotification(
-        `Completed: ${task.title}`,
-        'Task finished successfully'
-      );
     } catch (error) {
       console.error(`[Scheduler] Error executing task ${task.id}:`, error);
       this.sendNotification(
