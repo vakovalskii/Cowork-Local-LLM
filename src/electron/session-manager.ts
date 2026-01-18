@@ -115,7 +115,7 @@ class SessionManager {
     if (targetWindows.length === 0) {
       // No windows subscribed to this session
       console.warn(
-        `[SessionManager] No windows subscribed to session ${sessionId}, event not delivered`
+        `[SessionManager] No windows subscribed to session ${sessionId}, event ${event.type} not delivered`
       );
       return;
     }
