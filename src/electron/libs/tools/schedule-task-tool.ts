@@ -1,9 +1,14 @@
-import { BaseTool, ToolDefinition, ToolResult, ToolExecutionContext } from './base-tool.js';
-import type { SchedulerStore, ScheduledTask } from '../scheduler-store.js';
+import {
+  BaseTool,
+  ToolDefinition,
+  ToolResult,
+  ToolExecutionContext,
+} from "./base-tool.js";
+import type { SchedulerStore, ScheduledTask } from "../scheduler-store.js";
 
 export interface ScheduleTaskParams {
   explanation: string;
-  operation: 'create' | 'list' | 'delete' | 'update';
+  operation: "create" | "list" | "delete" | "update";
   taskId?: string;
   title?: string;
   prompt?: string;
@@ -13,9 +18,9 @@ export interface ScheduleTaskParams {
 }
 
 export const ScheduleTaskToolDefinition: ToolDefinition = {
-  type: 'function',
+  type: "function",
   function: {
-    name: 'Scheduler',
+    name: "Scheduler",
     description: `Schedule tasks with notifications and automatic execution.
 
 **Use Cases**:
@@ -53,45 +58,50 @@ export const ScheduleTaskToolDefinition: ToolDefinition = {
 - Set notifyBefore (in minutes) to get a notification before task execution
 - Task execution also triggers a notification with the result`,
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
         explanation: {
-          type: 'string',
-          description: 'Brief explanation of what this task scheduling operation does'
+          type: "string",
+          description:
+            "Brief explanation of what this task scheduling operation does",
         },
         operation: {
-          type: 'string',
-          enum: ['create', 'list', 'delete', 'update'],
-          description: 'Operation to perform'
+          type: "string",
+          enum: ["create", "list", "delete", "update"],
+          description: "Operation to perform",
         },
         taskId: {
-          type: 'string',
-          description: 'Task ID (required for delete/update operations)'
+          type: "string",
+          description: "Task ID (required for delete/update operations)",
         },
         title: {
-          type: 'string',
-          description: 'Task title/name (required for create, optional for update)'
+          type: "string",
+          description:
+            "Task title/name (required for create, optional for update)",
         },
         prompt: {
-          type: 'string',
-          description: 'AI prompt to execute when task triggers (optional, can be just a reminder)'
+          type: "string",
+          description:
+            "AI prompt to execute when task triggers (optional, can be just a reminder)",
         },
         schedule: {
-          type: 'string',
-          description: 'Schedule format: "1m", "1h", "1d", "every 10m", "every 1h", "every 1d", "daily 09:00", "2026-01-20 15:30"'
+          type: "string",
+          description:
+            'Schedule format: "1m", "1h", "1d", "every 10m", "every 1h", "every 1d", "daily 09:00", "2026-01-20 15:30"',
         },
         notifyBefore: {
-          type: 'number',
-          description: 'Send notification X minutes before task execution (optional)'
+          type: "number",
+          description:
+            "Send notification X minutes before task execution (optional)",
         },
         enabled: {
-          type: 'boolean',
-          description: 'Enable/disable task (for update operation)'
-        }
+          type: "boolean",
+          description: "Enable/disable task (for update operation)",
+        },
       },
-      required: ['explanation', 'operation']
-    }
-  }
+      required: ["explanation", "operation"],
+    },
+  },
 };
 
 export class ScheduleTaskTool extends BaseTool {
@@ -106,51 +116,76 @@ export class ScheduleTaskTool extends BaseTool {
     return ScheduleTaskToolDefinition;
   }
 
-  async execute(args: ScheduleTaskParams, context: ToolExecutionContext): Promise<ToolResult> {
+  async execute(
+    args: ScheduleTaskParams,
+    context: ToolExecutionContext,
+  ): Promise<ToolResult> {
     try {
-      const { operation, taskId, title, prompt, schedule, notifyBefore, enabled } = args;
+      const {
+        operation,
+        taskId,
+        title,
+        prompt,
+        schedule,
+        notifyBefore,
+        enabled,
+      } = args;
 
       switch (operation) {
-        case 'create':
+        case "create":
           if (!title || !schedule) {
             return {
               success: false,
-              error: 'Missing required fields: title and schedule are required for create operation'
+              error:
+                "Missing required fields: title and schedule are required for create operation",
             };
           }
-          return await this.createTask({ title, prompt, schedule, notifyBefore });
+          return await this.createTask({
+            title,
+            prompt,
+            schedule,
+            notifyBefore,
+          });
 
-        case 'list':
+        case "list":
           return await this.listTasks();
 
-        case 'delete':
+        case "delete":
           if (!taskId) {
             return {
               success: false,
-              error: 'Missing required field: taskId is required for delete operation'
+              error:
+                "Missing required field: taskId is required for delete operation",
             };
           }
           return await this.deleteTask(taskId);
 
-        case 'update':
+        case "update":
           if (!taskId) {
             return {
               success: false,
-              error: 'Missing required field: taskId is required for update operation'
+              error:
+                "Missing required field: taskId is required for update operation",
             };
           }
-          return await this.updateTask(taskId, { title, prompt, schedule, notifyBefore, enabled });
+          return await this.updateTask(taskId, {
+            title,
+            prompt,
+            schedule,
+            notifyBefore,
+            enabled,
+          });
 
         default:
           return {
             success: false,
-            error: `Unknown operation: ${operation}`
+            error: `Unknown operation: ${operation}`,
           };
       }
     } catch (error) {
       return {
         success: false,
-        error: `Failed to execute schedule_task: ${error instanceof Error ? error.message : String(error)}`
+        error: `Failed to execute schedule_task: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
   }
@@ -164,21 +199,23 @@ export class ScheduleTaskTool extends BaseTool {
     if (!this.schedulerStore) {
       return {
         success: false,
-        error: 'Scheduler store not initialized'
+        error: "Scheduler store not initialized",
       };
     }
 
     const taskId = crypto.randomUUID();
     const nextRun = this.calculateNextRun(params.schedule);
-    
+
     if (!nextRun) {
       return {
         success: false,
-        error: `Invalid schedule format: ${params.schedule}`
+        error: `Invalid schedule format: ${params.schedule}`,
       };
     }
 
-    const isRecurring = params.schedule.startsWith('every') || params.schedule.startsWith('daily');
+    const isRecurring =
+      params.schedule.startsWith("every") ||
+      params.schedule.startsWith("daily");
 
     const task = this.schedulerStore.createTask({
       id: taskId,
@@ -188,12 +225,12 @@ export class ScheduleTaskTool extends BaseTool {
       nextRun,
       isRecurring,
       notifyBefore: params.notifyBefore,
-      enabled: true
+      enabled: true,
     });
 
     return {
       success: true,
-      output: `✅ Reminder set for ${new Date(nextRun).toLocaleString()}`
+      output: `✅ Reminder set for ${new Date(nextRun).toLocaleString()}`,
     };
   }
 
@@ -201,33 +238,35 @@ export class ScheduleTaskTool extends BaseTool {
     if (!this.schedulerStore) {
       return {
         success: false,
-        error: 'Scheduler store not initialized'
+        error: "Scheduler store not initialized",
       };
     }
 
     const tasks = this.schedulerStore.listTasks();
-    
+
     if (tasks.length === 0) {
       return {
         success: true,
-        output: 'No scheduled tasks yet. Use operation="create" to add one.'
+        output: 'No scheduled tasks yet. Use operation="create" to add one.',
       };
     }
 
-    const output = tasks.map((task, index) => {
-      const nextRun = new Date(task.nextRun).toLocaleString();
-      const status = task.enabled ? '✅' : '⏸️';
-      return `${index + 1}. ${status} ${task.title}
+    const output = tasks
+      .map((task, index) => {
+        const nextRun = new Date(task.nextRun).toLocaleString();
+        const status = task.enabled ? "✅" : "⏸️";
+        return `${index + 1}. ${status} ${task.title}
    ID: ${task.id}
    Schedule: ${task.schedule}
    Next run: ${nextRun}
-   ${task.prompt ? `Prompt: ${task.prompt.substring(0, 50)}${task.prompt.length > 50 ? '...' : ''}` : 'Reminder only'}
-   ${task.notifyBefore ? `Notify: ${task.notifyBefore}m before` : ''}`;
-    }).join('\n\n');
+   ${task.prompt ? `Prompt: ${task.prompt.substring(0, 50)}${task.prompt.length > 50 ? "..." : ""}` : "Reminder only"}
+   ${task.notifyBefore ? `Notify: ${task.notifyBefore}m before` : ""}`;
+      })
+      .join("\n\n");
 
     return {
       success: true,
-      output: `📋 Scheduled Tasks (${tasks.length}):\n\n${output}`
+      output: `📋 Scheduled Tasks (${tasks.length}):\n\n${output}`,
     };
   }
 
@@ -235,22 +274,22 @@ export class ScheduleTaskTool extends BaseTool {
     if (!this.schedulerStore) {
       return {
         success: false,
-        error: 'Scheduler store not initialized'
+        error: "Scheduler store not initialized",
       };
     }
 
     const deleted = this.schedulerStore.deleteTask(taskId);
-    
+
     if (!deleted) {
       return {
         success: false,
-        error: `Task ${taskId} not found`
+        error: `Task ${taskId} not found`,
       };
     }
 
     return {
       success: true,
-      output: `✅ Task ${taskId} deleted successfully`
+      output: `✅ Task ${taskId} deleted successfully`,
     };
   }
 
@@ -262,68 +301,83 @@ export class ScheduleTaskTool extends BaseTool {
       schedule?: string;
       notifyBefore?: number;
       enabled?: boolean;
-    }
+    },
   ): Promise<ToolResult> {
     if (!this.schedulerStore) {
       return {
         success: false,
-        error: 'Scheduler store not initialized'
+        error: "Scheduler store not initialized",
       };
     }
 
     // If schedule is being updated, recalculate nextRun
     const updateData: Parameters<typeof this.schedulerStore.updateTask>[1] = {};
-    
+
     if (updates.title !== undefined) updateData.title = updates.title;
     if (updates.prompt !== undefined) updateData.prompt = updates.prompt;
-    if (updates.notifyBefore !== undefined) updateData.notifyBefore = updates.notifyBefore;
+    if (updates.notifyBefore !== undefined)
+      updateData.notifyBefore = updates.notifyBefore;
     if (updates.enabled !== undefined) updateData.enabled = updates.enabled;
-    
+
     if (updates.schedule !== undefined) {
       const nextRun = this.calculateNextRun(updates.schedule);
       if (!nextRun) {
         return {
           success: false,
-          error: `Invalid schedule format: ${updates.schedule}`
+          error: `Invalid schedule format: ${updates.schedule}`,
         };
       }
       updateData.schedule = updates.schedule;
       updateData.nextRun = nextRun;
-      updateData.isRecurring = updates.schedule.startsWith('every') || updates.schedule.startsWith('daily');
+      updateData.isRecurring =
+        updates.schedule.startsWith("every") ||
+        updates.schedule.startsWith("daily");
     }
 
     const updated = this.schedulerStore.updateTask(taskId, updateData);
-    
+
     if (!updated) {
       return {
         success: false,
-        error: `Task ${taskId} not found`
+        error: `Task ${taskId} not found`,
       };
     }
 
     return {
       success: true,
-      output: `✅ Task ${taskId} updated successfully`
+      output: `✅ Task ${taskId} updated successfully`,
     };
   }
 
   private calculateNextRun(schedule: string): number | null {
     const now = Date.now();
-    
+
     // One-time delays
     const onceMatch = schedule.match(/^(\d+)([mhd])$/);
     if (onceMatch) {
       const [, amount, unit] = onceMatch;
-      const multiplier = { m: 60 * 1000, h: 60 * 60 * 1000, d: 24 * 60 * 60 * 1000 };
-      return now + parseInt(amount) * multiplier[unit as keyof typeof multiplier];
+      const multiplier = {
+        m: 60 * 1000,
+        h: 60 * 60 * 1000,
+        d: 24 * 60 * 60 * 1000,
+      };
+      return (
+        now + parseInt(amount) * multiplier[unit as keyof typeof multiplier]
+      );
     }
 
     // Repeating intervals
     const everyMatch = schedule.match(/^every (\d+)([mhd])$/);
     if (everyMatch) {
       const [, amount, unit] = everyMatch;
-      const multiplier = { m: 60 * 1000, h: 60 * 60 * 1000, d: 24 * 60 * 60 * 1000 };
-      return now + parseInt(amount) * multiplier[unit as keyof typeof multiplier];
+      const multiplier = {
+        m: 60 * 1000,
+        h: 60 * 60 * 1000,
+        d: 24 * 60 * 60 * 1000,
+      };
+      return (
+        now + parseInt(amount) * multiplier[unit as keyof typeof multiplier]
+      );
     }
 
     // Daily at specific time
@@ -339,7 +393,9 @@ export class ScheduleTaskTool extends BaseTool {
     }
 
     // Specific datetime
-    const datetimeMatch = schedule.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/);
+    const datetimeMatch = schedule.match(
+      /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/,
+    );
     if (datetimeMatch) {
       const [, year, month, day, hours, minutes] = datetimeMatch;
       const target = new Date(
@@ -347,7 +403,7 @@ export class ScheduleTaskTool extends BaseTool {
         parseInt(month) - 1,
         parseInt(day),
         parseInt(hours),
-        parseInt(minutes)
+        parseInt(minutes),
       );
       return target.getTime();
     }
