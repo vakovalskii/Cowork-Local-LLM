@@ -38,11 +38,11 @@ All tools follow snake_case naming convention: verb_noun
 **Web Access (use as LAST RESORT):**
 - `search_web` - Search the internet
 - `extract_page` - Extract full page content (Tavily only)
-- `read_page` - Read web page (Z.AI Reader, if enabled)
+{read_page_line}
 - `render_page` - Render page in Chromium and extract content (for JS-heavy SPAs)
 
 **Memory:**
-- `manage_memory` - Store/read long-term memory (if enabled)
+{memory_line}
 
 **Task Planning:**
 - `manage_todos` - Create and track task lists for complex operations

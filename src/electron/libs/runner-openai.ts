@@ -8,8 +8,8 @@ import OpenAI from 'openai';
 import type { ServerEvent } from "../types.js";
 import type { Session } from "./session-store.js";
 import { loadApiSettings } from "./settings-store.js";
-import { TOOLS, getTools, getSystemPrompt } from "./tools-definitions.js";
-import { getInitialPrompt } from "./prompt-loader.js";
+import { TOOLS, getTools } from "./tools-definitions.js";
+import { getInitialPrompt, getSystemPrompt } from "./prompt-loader.js";
 import { getTodosSummary, getTodos, setTodos, clearTodos } from "./tools/manage-todos-tool.js";
 import { ToolExecutor } from "./tools-executor.js";
 import type { FileChange } from "../types.js";
@@ -71,6 +71,10 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
   // Token tracking (declare outside try block for catch access)
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
+
+  // CRITICAL: Clear todos from any previous session FIRST
+  // They will be restored from DB if this is an existing session
+  clearTodos(session.id);
 
   // Permission tracking
   const pendingPermissions = new Map<string, { resolve: (approved: boolean) => void }>();
@@ -200,7 +204,7 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
       let memoryContent = await loadMemory();
       
       // Build system prompt with optional todos
-      let systemContent = getSystemPrompt(currentCwd);
+      let systemContent = getSystemPrompt(currentCwd, guiSettings);
       const todosSummary = getTodosSummary(session.id);
       if (todosSummary) {
         systemContent += todosSummary;
