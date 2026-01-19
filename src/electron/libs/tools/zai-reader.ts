@@ -244,19 +244,19 @@ export class ZaiReaderTool {
    * Fallback: read page using simple HTTP fetch
    */
   private async readWithFetch(url: string): Promise<ZaiReaderResponse> {
-    const result = await executeFetchHtmlTool({
-      args: { url, extract_text: true, max_length: 50000 },
-      sessionId: "",
-      threadId: "",
-      workspaceDir: "",
-      sendEvent: () => {},
-    });
+    const result = await executeFetchHtmlTool(
+      { url, extract_text: true, max_length: 50000 },
+      {
+        cwd: "",
+        isPathSafe: () => false,
+      }
+    );
 
     if (!result.success) {
-      throw new Error(result.output);
+      throw new Error(result.output || "Fetch failed");
     }
 
-    const data = JSON.parse(result.output);
+    const data = JSON.parse(result.output!);
 
     return {
       id: "fetch-fallback",

@@ -77,20 +77,20 @@ class DuckDuckGoWebSearch {
 
     try {
       // Use the DuckDuckGo search tool
-      const result = await executeSearchTool({
-        args: { query, max_results },
-        sessionId: "",
-        threadId: "",
-        workspaceDir: "",
-        sendEvent: () => {},
-      });
+      const result = await executeSearchTool(
+        { query, max_results },
+        {
+          cwd: "",
+          isPathSafe: () => false,
+        }
+      );
 
       if (!result.success) {
-        throw new Error(result.output);
+        throw new Error(result.output || "Search failed");
       }
 
       // Parse the output to extract results
-      const lines = result.output.split("\n");
+      const lines = (result.output || "").split("\n");
       const results: SearchResult[] = [];
       let currentResult: Partial<SearchResult> = {};
 

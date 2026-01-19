@@ -175,15 +175,15 @@ export class ExtractPageContentTool {
 
     for (const url of urls) {
       try {
-        const result = await executeFetchHtmlTool({
-          args: { url, extract_text: true, max_length: 50000 },
-          sessionId: "",
-          threadId: "",
-          workspaceDir: "",
-          sendEvent: () => {},
-        });
+        const result = await executeFetchHtmlTool(
+          { url, extract_text: true, max_length: 50000 },
+          {
+            cwd: "",
+            isPathSafe: () => false,
+          }
+        );
 
-        if (result.success) {
+        if (result.success && result.output) {
           const data = JSON.parse(result.output);
           results.push({
             url,
