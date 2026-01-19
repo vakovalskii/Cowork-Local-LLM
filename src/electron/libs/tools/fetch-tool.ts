@@ -123,19 +123,18 @@ export const FetchHtmlToolDefinition: ToolDefinition = {
   type: "function",
   function: {
     name: "fetch_html",
-    description: `Fetch HTML content from a DIRECT URL and extract text.
+    description: `Fetch HTML content from a URL and extract text. ALWAYS USE THIS when you have a direct URL (not search).
 
-**IMPORTANT: Use this when you HAVE a specific URL** (e.g., github.com/user/repo, docs.example.com)
+**IMPORTANT: If you have a URL, use this - it's 10x faster than search**
 
-**Use this for:**
-- Reading content from a known URL
+**Use for:**
 - GitHub pages, documentation, articles
-- Extracting text from web pages
-- Static websites
+- Any known URL (docs.example.com, github.com/user/repo)
+- Reading web page content
 
 **Don't use for:**
-- Finding URLs (use 'search' tool to discover URLs first)
-- Sites requiring JavaScript (use browser tools)
+- Finding URLs (use 'search' to discover URLs first)
+- JavaScript-heavy sites (use browser tools)
 
 **Parameters:**
 - url: The URL to fetch (required)
@@ -143,8 +142,8 @@ export const FetchHtmlToolDefinition: ToolDefinition = {
 - max_length: Maximum response length in characters (default: 50000)
 
 **Returns:**
-- title: Page title (if found)
-- content: HTML or extracted text content
+- title: Page title
+- content: HTML or extracted text
 - url: The fetched URL`,
     parameters: {
       type: "object",

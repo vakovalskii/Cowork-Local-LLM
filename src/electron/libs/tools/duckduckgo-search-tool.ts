@@ -24,29 +24,28 @@ export const SearchToolDefinition: ToolDefinition = {
   type: "function",
   function: {
     name: "search",
-    description: `Search the web using DuckDuckGo to FIND URLs (no API key required).
+    description: `Search DuckDuckGo to FIND URLs when you don't have one yet.
 
-**IMPORTANT: Use this to DISCOVER URLs, not to read them**
-- If you already have a URL, use fetch_html instead
-- This tool only returns search results (titles + URLs + snippets)
-- To read full content, use the URLs with fetch_html
+**IMPORTANT: This finds URLs, doesn't read them**
+- Have a URL already? → Use 'fetch_html' instead (much faster!)
+- Returns only search results (titles + URLs + snippets)
+- To read full content → Use fetch_html with returned URLs
 
-**Use this for:**
-- Finding URLs about a topic
-- Discovering relevant websites
-- Research and fact-checking
-- When you DON'T have a specific URL yet
+**Use for:**
+- Discovering URLs about a topic
+- Research queries ("best practices for X")
+- Finding relevant websites
+
+**Don't use for:**
+- Reading known URLs (use fetch_html)
+- Getting full page content
 
 **Parameters:**
 - query: Search query (required)
-- max_results: Maximum number of results (default: 10, max: 50)
+- max_results: Max results (default: 10, max: 50)
 
 **Returns:**
-- List of search results with:
-  - title: Page title
-  - url: Page URL
-  - snippet: Text snippet from page
-  - position: Result position`,
+- List of results with title, url, snippet, position`,
     parameters: {
       type: "object",
       properties: {
