@@ -1,6 +1,38 @@
 import { useState, useEffect } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import type { ApiSettings, CreateTaskPayload, TaskMode, ThreadTask, ModelInfo } from "../types";
+import type { ApiSettings, CreateTaskPayload, TaskMode, ThreadTask, ModelInfo, LLMModel } from "../types";
+
+// Helper function to generate task title automatically (max 3 words)
+function generateTaskTitle(
+  mode: TaskMode,
+  tasks: ThreadTask[],
+  consensusPrompt: string,
+  _consensusModel: string,
+  consensusQuantity: number
+): string {
+  if (mode === "consensus") {
+    if (consensusPrompt.trim()) {
+      // Extract first meaningful word from consensus prompt
+      const words = consensusPrompt.trim().split(/\s+/).filter(word => word.length > 0);
+      if (words.length > 0) {
+        const firstWord = words[0].replace(/[^a-zA-Zа-яА-Я0-9]/g, '');
+        return `${firstWord} x${consensusQuantity}`;
+      }
+    }
+    return `Consensus x${consensusQuantity}`;
+  } else {
+    // For different tasks, get unique models
+    const uniqueModels = [...new Set(tasks.filter(t => t.model).map(t => t.model))];
+    if (uniqueModels.length > 0) {
+      if (uniqueModels.length === 1) {
+        return `${uniqueModels[0]} x${tasks.length}`;
+      } else {
+        return `Multi-Model x${tasks.length}`;
+      }
+    }
+    return "Multi-Task";
+  }
+}
 
 interface TaskDialogProps {
   cwd: string;
@@ -8,6 +40,7 @@ interface TaskDialogProps {
   onCreateTask: (payload: CreateTaskPayload) => void;
   apiSettings: ApiSettings | null;
   availableModels: ModelInfo[];
+  llmModels?: LLMModel[];
 }
 
 export function TaskDialog({
@@ -15,9 +48,9 @@ export function TaskDialog({
   onClose,
   onCreateTask,
   apiSettings,
-  availableModels
+  availableModels,
+  llmModels = []
 }: TaskDialogProps) {
-  const [title, setTitle] = useState("");
   const [mode, setMode] = useState<TaskMode>("consensus");
   const [shareWebCache, setShareWebCache] = useState(true);
   const [localCwd, setLocalCwd] = useState(cwd);
@@ -43,6 +76,31 @@ export function TaskDialog({
     { id: "1", model: "", prompt: "" }
   ]);
 
+  // Combine available models from API and LLM providers
+  const allAvailableModels = (() => {
+    const models: ModelInfo[] = [];
+    
+    // Add legacy API models
+    availableModels.forEach(model => {
+      models.push({
+        id: model.id,
+        name: model.name,
+        description: model.description
+      });
+    });
+    
+    // Add LLM provider models (only enabled ones)
+    llmModels.filter(m => m.enabled).forEach(model => {
+      models.push({
+        id: model.id,
+        name: model.name,
+        description: `${model.providerType} | ${model.description || ''}`
+      });
+    });
+    
+    return models;
+  })();
+
   const handleAddTask = () => {
     setTasks([...tasks, { id: Date.now().toString(), model: "", prompt: "" }]);
   };
@@ -66,9 +124,11 @@ export function TaskDialog({
   };
 
   const handleCreateTask = () => {
+    const title = generateTaskTitle(mode, tasks, consensusPrompt, consensusModel, consensusQuantity);
+    
     const payload: CreateTaskPayload = {
       mode,
-      title: title || "New Task",
+      title,
       cwd: localCwd,
       allowedTools: undefined,
       shareWebCache,
@@ -87,8 +147,8 @@ export function TaskDialog({
   };
 
   const isValid = mode === "consensus"
-    ? title.trim() !== ""
-    : title.trim() !== "" && tasks.some(t => t.model && t.prompt.trim() !== "");
+    ? consensusPrompt.trim() !== ""
+    : tasks.some(t => t.model && t.prompt.trim() !== "");
 
   const displayConsensusModel = consensusModel || apiSettings?.model || "Select model...";
 
@@ -106,16 +166,13 @@ export function TaskDialog({
         <p className="mt-2 text-sm text-muted">Create a task with multiple threads running in parallel. Each thread works independently with its own model and prompt.</p>
 
         <div className="mt-5 grid gap-4">
-          {/* Title */}
-          <label className="grid gap-1.5">
+          {/* Auto-generated Title */}
+          <div className="grid gap-1.5">
             <span className="text-xs font-medium text-muted">Task Title</span>
-            <input
-              className="rounded-xl border border-ink-900/10 bg-surface-secondary px-4 py-2.5 text-sm text-ink-800 placeholder:text-muted-light focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/20 transition-colors"
-              placeholder="e.g., Build API for user management"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          </label>
+            <div className="rounded-xl border border-ink-900/10 bg-surface-secondary px-4 py-2.5 text-sm text-ink-800">
+              {generateTaskTitle(mode, tasks, consensusPrompt, consensusModel, consensusQuantity)}
+            </div>
+          </div>
 
           {/* Mode Selection */}
           <label className="grid gap-1.5">
@@ -207,10 +264,10 @@ export function TaskDialog({
                   </DropdownMenu.Trigger>
                   <DropdownMenu.Portal>
                     <DropdownMenu.Content className="z-50 min-w-[300px] max-w-[400px] rounded-xl border border-ink-900/10 bg-white p-1 shadow-lg max-h-60 overflow-y-auto" sideOffset={8}>
-                      {availableModels.length === 0 ? (
+                      {allAvailableModels.length === 0 ? (
                         <div className="px-3 py-2 text-sm text-muted">No models available. Check your API settings.</div>
                       ) : (
-                        availableModels.map((model) => (
+                        allAvailableModels.map((model) => (
                           <DropdownMenu.Item
                             key={model.id}
                             className="flex flex-col cursor-pointer rounded-lg px-3 py-2 text-sm text-ink-700 outline-none hover:bg-ink-900/5"
@@ -297,10 +354,10 @@ export function TaskDialog({
                       </DropdownMenu.Trigger>
                       <DropdownMenu.Portal>
                         <DropdownMenu.Content className="z-50 min-w-[300px] max-w-[400px] rounded-xl border border-ink-900/10 bg-white p-1 shadow-lg max-h-60 overflow-y-auto" sideOffset={8}>
-                          {availableModels.length === 0 ? (
+                          {allAvailableModels.length === 0 ? (
                             <div className="px-3 py-2 text-sm text-muted">No models available. Check your API settings.</div>
                           ) : (
-                            availableModels.map((model) => (
+                            allAvailableModels.map((model) => (
                               <DropdownMenu.Item
                                 key={model.id}
                                 className="flex flex-col cursor-pointer rounded-lg px-3 py-2 text-sm text-ink-700 outline-none hover:bg-ink-900/5"

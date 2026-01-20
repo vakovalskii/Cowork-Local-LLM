@@ -12,7 +12,6 @@ import { PromptInput, usePromptActions } from "./components/PromptInput";
 import { MessageCard } from "./components/EventCard";
 import { AppFooter } from "./components/AppFooter";
 import { TodoPanel } from "./components/TodoPanel";
-import { MultiThreadPanel } from "./components/MultiThreadPanel";
 import MDContent from "./render/markdown";
 
 function App() {
@@ -31,10 +30,10 @@ function App() {
   const selectedModel = useAppStore((s) => s.selectedModel);
   const setSelectedModel = useAppStore((s) => s.setSelectedModel);
   const availableModels = useAppStore((s) => s.availableModels);
+  const llmModels = useAppStore((s) => s.llmModels);
 
   const sessions = useAppStore((s) => s.sessions);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
-  const setActiveSessionId = useAppStore((s) => s.setActiveSessionId);
   const showStartModal = useAppStore((s) => s.showStartModal);
   const setShowStartModal = useAppStore((s) => s.setShowStartModal);
   const globalError = useAppStore((s) => s.globalError);
@@ -120,8 +119,6 @@ function App() {
   const messages = activeSession?.messages ?? [];
   const permissionRequests = activeSession?.permissionRequests ?? [];
   const isRunning = activeSession?.status === "running";
-  const multiThreadTasks = useAppStore((s) => s.multiThreadTasks);
-  const deleteMultiThreadTask = useAppStore((s) => s.deleteMultiThreadTask);
 
   useEffect(() => {
     if (connected) {
@@ -273,6 +270,7 @@ function App() {
   }, [sendEvent]);
 
   const handleCreateTask = useCallback((payload: any) => {
+    // Create task - it will auto-start on backend
     sendEvent({ type: "task.create", payload });
     setShowTaskDialog(false);
   }, [sendEvent]);
@@ -446,14 +444,6 @@ function App() {
           </div>
         </div>
 
-        {/* Multi-Thread Tasks Panel */}
-        <MultiThreadPanel
-          multiThreadTasks={multiThreadTasks}
-          sessions={sessions as any}
-          onSelectSession={(sessionId) => setActiveSessionId(sessionId)}
-          onDeleteTask={deleteMultiThreadTask}
-        />
-
         {/* Todo Panel - fixed above input */}
         {activeSession?.todos && activeSession.todos.length > 0 && (
           <div className="flex-shrink-0 px-4 pb-2 mx-auto w-full max-w-4xl" style={{ marginBottom: '120px' }}>
@@ -493,6 +483,7 @@ function App() {
           onCreateTask={handleCreateTask}
           apiSettings={apiSettings}
           availableModels={availableModels}
+          llmModels={llmModels}
         />
       )}
 

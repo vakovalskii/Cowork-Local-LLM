@@ -44,7 +44,8 @@
 		"copy:build-info": "node -e \"const fs=require('fs');fs.copyFileSync('src/electron/build-info.json','dist-electron/build-info.json')\"",
 		"dist:mac": "npm run transpile:electron && npm run build && electron-builder --mac --arm64",
 		"dist:win": "npm run transpile:electron && npm run build && electron-builder --win --x64",
-		"dist:linux": "npm run transpile:electron && npm run build && electron-builder --linux --x64"
+		"dist:linux": "npm run transpile:electron && npm run build && electron-builder --linux --x64",
+		"type-check": "tsc --noEmit"
 	},
 	"dependencies": {
 		"@anthropic-ai/claude-agent-sdk": "^0.2.6",
@@ -70,6 +71,7 @@
 		"rehype-raw": "^7.0.0",
 		"remark-gfm": "^4.0.1",
 		"tailwindcss": "^4.1.18",
+		"type-check": "^0.4.0",
 		"vite-tsconfig-paths": "^6.0.3",
 		"vm2": "^3.10.1",
 		"zustand": "^5.0.10",

@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import type { ApiSettings, WebSearchProvider, ZaiApiUrl, ZaiReaderApiUrl, ModelInfo } from "../types";
+import type { 
+  ApiSettings, 
+  WebSearchProvider, 
+  ZaiApiUrl, 
+  ZaiReaderApiUrl, 
+  LLMProvider,
+  LLMModel,
+  LLMProviderSettings,
+  LLMProviderType
+} from "../types";
 
 type SettingsModalProps = {
   onClose: () => void;
@@ -8,7 +17,12 @@ type SettingsModalProps = {
   currentSettings: ApiSettings | null;
 };
 
+type TabId = 'llm-models' | 'web-tools' | 'tools' | 'memory-mode';
+
 export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModalProps) {
+  const [activeTab, setActiveTab] = useState<TabId>('llm-models');
+  
+  // Original API settings state
   const [apiKey, setApiKey] = useState(currentSettings?.apiKey || "");
   const [baseUrl, setBaseUrl] = useState(currentSettings?.baseUrl || "");
   const [model, setModel] = useState(currentSettings?.model || "");
@@ -28,15 +42,14 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
   const [enableDuckDuckGo, setEnableDuckDuckGo] = useState(currentSettings?.enableDuckDuckGo || false);
   const [enableFetchTools, setEnableFetchTools] = useState(currentSettings?.enableFetchTools || false);
   const [memoryLoading, setMemoryLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
   const [showTavilyPassword, setShowTavilyPassword] = useState(false);
   const [showZaiPassword, setShowZaiPassword] = useState(false);
-  
-  // Model selection state
-  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
-  const [loadingModels, setLoadingModels] = useState(false);
-  const [modelsError, setModelsError] = useState<string | null>(null);
-  const [useCustomModel, setUseCustomModel] = useState(false); // Allow manual input if fetch fails
+
+  // LLM Provider settings state
+  const [llmProviders, setLlmProviders] = useState<LLMProvider[]>([]);
+  const [llmModels, setLlmModels] = useState<LLMModel[]>([]);
+  const [llmLoading, setLlmLoading] = useState(false);
+  const [llmError, setLlmError] = useState<string | null>(null);
 
   useEffect(() => {
     if (currentSettings) {
@@ -57,35 +70,16 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       setEnableBrowserTools(currentSettings.enableBrowserTools || false);
       setEnableDuckDuckGo(currentSettings.enableDuckDuckGo || false);
       setEnableFetchTools(currentSettings.enableFetchTools || false);
-      
-      // Reset model selection state
-      setUseCustomModel(false);
-      setAvailableModels([]);
-      setModelsError(null);
-      
-      // Load models if settings exist
-      if (currentSettings.baseUrl && currentSettings.apiKey) {
-        loadModels();
+
+      // Load LLM provider settings
+      if (currentSettings.llmProviders) {
+        setLlmProviders(currentSettings.llmProviders.providers);
+        setLlmModels(currentSettings.llmProviders.models);
+      } else {
+        loadLlmProviders();
       }
     }
   }, [currentSettings]);
-
-  // Load memory content when modal opens and memory is enabled
-  useEffect(() => {
-    if (enableMemory) {
-      loadMemoryContent();
-    }
-  }, [enableMemory]);
-
-  // Load models when baseUrl or apiKey changes
-  useEffect(() => {
-    if (baseUrl && apiKey) {
-      loadModels();
-    } else {
-      setAvailableModels([]);
-      setModelsError(null);
-    }
-  }, [baseUrl, apiKey]);
 
   const loadMemoryContent = async () => {
     setMemoryLoading(true);
@@ -108,58 +102,76 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
     }
   };
 
-  const loadModels = async () => {
-    setLoadingModels(true);
-    setModelsError(null);
-    try {
-      window.electron.sendClientEvent({ type: "models.get" });
-      
-      // Listen for response
-      const unsubscribe = window.electron.onServerEvent((event) => {
-        if (event.type === "models.loaded") {
-          const models = event.payload.models;
-          setAvailableModels(models);
-          
-          // Auto-select first model if no model is set
-          if (!model && models.length > 0) {
-            setModel(models[0].id);
-          }
-          setLoadingModels(false);
-        } else if (event.type === "models.error") {
-          setModelsError(event.payload.message);
-          setLoadingModels(false);
-        }
-      });
-
-      // Store unsubscribe function to clean up later
-      (window as any).__modelsUnsubscribe = unsubscribe;
-    } catch (error) {
-      console.error('Failed to load models:', error);
-      setModelsError(String(error));
-      setLoadingModels(false);
-    }
-  };
-
-  const handleLoadModels = () => {
-    loadModels();
-  };
-
-  // Cleanup event listener on unmount
-  useEffect(() => {
-    return () => {
-      if ((window as any).__modelsUnsubscribe) {
-        (window as any).__modelsUnsubscribe();
+  const loadLlmProviders = () => {
+    setLlmLoading(true);
+    setLlmError(null);
+    window.electron.sendClientEvent({ type: "llm.providers.get" });
+    
+    const unsubscribe = window.electron.onServerEvent((event) => {
+      if (event.type === "llm.providers.loaded") {
+        const { settings } = event.payload;
+        setLlmProviders(settings.providers);
+        setLlmModels(settings.models);
+        setLlmLoading(false);
+        unsubscribe();
       }
-    };
-  }, []);
+    });
+
+    (window as any).__llmProvidersUnsubscribe = unsubscribe;
+  };
+
+  const fetchProviderModels = async (providerId: string) => {
+    setLlmLoading(true);
+    setLlmError(null);
+    
+    window.electron.sendClientEvent({ type: "llm.models.fetch", payload: { providerId } });
+    
+    const unsubscribe = window.electron.onServerEvent((event) => {
+      if (event.type === "llm.models.fetched") {
+        const { models } = event.payload;
+        setLlmModels(models);
+        setLlmLoading(false);
+        unsubscribe();
+        loadLlmProviders(); // Reload to get updated settings
+      } else if (event.type === "llm.models.error") {
+        setLlmError(event.payload.message);
+        setLlmLoading(false);
+        unsubscribe();
+      }
+    });
+
+    (window as any).__llmModelsUnsubscribe = unsubscribe;
+  };
+
+  const toggleModelEnabled = (modelId: string) => {
+    setLlmModels(prev => prev.map(m => 
+      m.id === modelId ? { ...m, enabled: !m.enabled } : m
+    ));
+  };
+
+  const toggleProviderEnabled = (providerId: string) => {
+    setLlmProviders(prev => prev.map(p => 
+      p.id === providerId ? { ...p, enabled: !p.enabled } : p
+    ));
+  };
+
+  const deleteProvider = (providerId: string) => {
+    setLlmProviders(prev => prev.filter(p => p.id !== providerId));
+    setLlmModels(prev => prev.filter(m => m.providerId !== providerId));
+  };
 
   const handleSave = async () => {
     const tempValue = parseFloat(temperature);
     
-    // Save memory content if changed
     if (enableMemory) {
       await saveMemoryContent();
     }
+
+    // Prepare LLM provider settings
+    const llmProviderSettings: LLMProviderSettings = {
+      providers: llmProviders,
+      models: llmModels
+    };
     
     onSave({
       apiKey: apiKey.trim(),
@@ -177,7 +189,8 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       enableGitTools,
       enableBrowserTools,
       enableDuckDuckGo,
-      enableFetchTools
+      enableFetchTools,
+      llmProviders: llmProviderSettings
     });
     onClose();
   };
@@ -195,463 +208,135 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
     setEnableMemory(false);
     setEnableZaiReader(false);
     setZaiReaderApiUrl('default');
-    setAvailableModels([]);
-    setUseCustomModel(false);
-    setModelsError(null);
+    setLlmProviders([]);
+    setLlmModels([]);
+    setEnableGitTools(false);
+    setEnableBrowserTools(false);
+    setEnableDuckDuckGo(false);
+    setEnableFetchTools(false);
   };
+
+  useEffect(() => {
+    return () => {
+      if ((window as any).__llmProvidersUnsubscribe) {
+        (window as any).__llmProvidersUnsubscribe();
+      }
+      if ((window as any).__llmModelsUnsubscribe) {
+        (window as any).__llmModelsUnsubscribe();
+      }
+    };
+  }, []);
 
   return (
     <Dialog.Root open onOpenChange={onClose}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg max-h-[90vh] rounded-2xl border border-ink-900/10 bg-surface shadow-2xl flex flex-col">
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 w-full max-w-3xl max-h-[90vh] rounded-2xl border border-ink-900/10 bg-surface shadow-2xl flex flex-col">
           <div className="px-6 pt-6 pb-4 border-b border-ink-900/10">
             <Dialog.Title className="text-xl font-semibold text-ink-900">
-              API Settings
+              Settings
             </Dialog.Title>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-ink-700 mb-2">
-                API Key
-              </label>
-              <div className="relative">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="Enter your API key"
-                  className="w-full px-4 py-2.5 pr-10 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-ink-900/20 transition-all"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-500 hover:text-ink-700"
-                >
-                  {showPassword ? (
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                    </svg>
-                  ) : (
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                  )}
-                </button>
-              </div>
-            </div>
+          <div className="flex border-b border-ink-900/10 overflow-x-auto">
+            <button
+              onClick={() => setActiveTab('llm-models')}
+              className={`px-5 py-3 text-sm font-medium transition-colors whitespace-nowrap ${
+                activeTab === 'llm-models'
+                  ? 'text-ink-900 border-b-2 border-accent'
+                  : 'text-ink-600 hover:text-ink-900'
+              }`}
+            >
+              LLM & Models
+            </button>
+            <button
+              onClick={() => setActiveTab('web-tools')}
+              className={`px-5 py-3 text-sm font-medium transition-colors whitespace-nowrap ${
+                activeTab === 'web-tools'
+                  ? 'text-ink-900 border-b-2 border-accent'
+                  : 'text-ink-600 hover:text-ink-900'
+              }`}
+            >
+              Web Reader & Search
+            </button>
+            <button
+              onClick={() => setActiveTab('tools')}
+              className={`px-5 py-3 text-sm font-medium transition-colors whitespace-nowrap ${
+                activeTab === 'tools'
+                  ? 'text-ink-900 border-b-2 border-accent'
+                  : 'text-ink-600 hover:text-ink-900'
+              }`}
+            >
+              Tools
+            </button>
+            <button
+              onClick={() => setActiveTab('memory-mode')}
+              className={`px-5 py-3 text-sm font-medium transition-colors whitespace-nowrap ${
+                activeTab === 'memory-mode'
+                  ? 'text-ink-900 border-b-2 border-accent'
+                  : 'text-ink-600 hover:text-ink-900'
+              }`}
+            >
+              Memory & Mode
+            </button>
+          </div>
 
-            <div>
-              <label className="block text-sm font-medium text-ink-700 mb-2">
-                Base URL
-              </label>
-              <input
-                type="text"
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="e.g., https://api.example.com, http://localhost:8000/v1"
-                className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-ink-900/20 transition-all"
+          <div className="flex-1 overflow-y-auto">
+            {activeTab === 'llm-models' ? (
+              <LLMModelsTab
+                providers={llmProviders}
+                models={llmModels}
+                loading={llmLoading}
+                error={llmError}
+                onToggleModel={toggleModelEnabled}
+                onToggleProvider={toggleProviderEnabled}
+                onDeleteProvider={deleteProvider}
+                onFetchModels={fetchProviderModels}
+                onReloadProviders={loadLlmProviders}
+                setLlmProviders={setLlmProviders}
               />
-              <p className="mt-1 text-xs text-ink-500">
-                OpenAI-compatible API endpoint (vLLM, Ollama, LM Studio, etc.)
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-ink-700 mb-2">
-                Model Name
-                <span className="ml-2 text-xs font-normal text-ink-500">
-                  {availableModels.length > 0 && !useCustomModel 
-                    ? `${availableModels.length} models available` 
-                    : 'Enter model name manually'}
-                </span>
-              </label>
-              
-              {useCustomModel || availableModels.length === 0 ? (
-                // Manual input mode
-                <div>
-                  <input
-                    type="text"
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
-                    placeholder="e.g., qwen3-30b-a3b-instruct-2507"
-                    className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-ink-900/20 transition-all"
-                  />
-                  {availableModels.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setUseCustomModel(false)}
-                      className="mt-2 text-xs text-accent hover:underline"
-                    >
-                      ← Use model selector instead
-                    </button>
-                  )}
-                </div>
-              ) : (
-                // Model selector mode
-                <div>
-                  <select
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
-                    className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-ink-900/20 transition-all"
-                  >
-                    <option value="">Select a model...</option>
-                    {availableModels.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name}
-                      </option>
-                    ))}
-                  </select>
-                  
-                  {loadingModels && (
-                    <p className="mt-1 text-xs text-ink-500">
-                      Loading models...
-                    </p>
-                  )}
-                  
-                  {modelsError && (
-                    <p className="mt-1 text-xs text-red-600">
-                      Failed to load models: {modelsError}
-                    </p>
-                  )}
-                  
-                  <div className="flex gap-2 mt-2">
-                    <button
-                      type="button"
-                      onClick={handleLoadModels}
-                      disabled={loadingModels || !baseUrl || !apiKey}
-                      className="text-xs text-accent hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Refresh models
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setUseCustomModel(true)}
-                      className="text-xs text-ink-600 hover:underline"
-                    >
-                      Enter model name manually
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-ink-700 mb-2">
-                Temperature
-              </label>
-              <input
-                type="number"
-                min="0"
-                max="2"
-                step="0.1"
-                value={temperature}
-                onChange={(e) => setTemperature(e.target.value)}
-                placeholder="0.3"
-                className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-ink-900/20 transition-all"
+            ) : activeTab === 'web-tools' ? (
+              <WebToolsTab
+                tavilyApiKey={tavilyApiKey}
+                setTavilyApiKey={setTavilyApiKey}
+                zaiApiKey={zaiApiKey}
+                setZaiApiKey={setZaiApiKey}
+                webSearchProvider={webSearchProvider}
+                setWebSearchProvider={setWebSearchProvider}
+                zaiApiUrl={zaiApiUrl}
+                setZaiApiUrl={setZaiApiUrl}
+                enableZaiReader={enableZaiReader}
+                setEnableZaiReader={setEnableZaiReader}
+                zaiReaderApiUrl={zaiReaderApiUrl}
+                setZaiReaderApiUrl={setZaiReaderApiUrl}
+                showTavilyPassword={showTavilyPassword}
+                setShowTavilyPassword={setShowTavilyPassword}
+                showZaiPassword={showZaiPassword}
+                setShowZaiPassword={setShowZaiPassword}
               />
-              <p className="mt-1 text-xs text-ink-500">
-                Lower = more focused (0.0-1.0 recommended for code, default: 0.3)
-              </p>
-            </div>
-
-            <div className="border-t border-ink-900/10 pt-4">
-              <label className="block text-sm font-medium text-ink-700 mb-2">
-                Web Search Provider
-                <span className="ml-2 text-xs font-normal text-ink-500">Select search engine for web search</span>
-              </label>
-              <select
-                value={webSearchProvider}
-                onChange={(e) => setWebSearchProvider(e.target.value as WebSearchProvider)}
-                className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-ink-900/20 transition-all"
-              >
-                <option value="tavily">Tavily</option>
-                <option value="zai">Z.AI</option>
-              </select>
-            </div>
-
-            {webSearchProvider === 'tavily' && (
-              <div>
-                <label className="block text-sm font-medium text-ink-700 mb-2">
-                  Tavily API Key
-                </label>
-                <div className="relative">
-                  <input
-                    type={showTavilyPassword ? "text" : "password"}
-                    value={tavilyApiKey}
-                    onChange={(e) => setTavilyApiKey(e.target.value)}
-                    placeholder="tvly-... (optional)"
-                    className="w-full px-4 py-2.5 pr-10 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-ink-900/20 transition-all"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowTavilyPassword(!showTavilyPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-500 hover:text-ink-700"
-                  >
-                    {showTavilyPassword ? (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                      </svg>
-                    ) : (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                    )}
-                  </button>
-                </div>
-                <p className="mt-1 text-xs text-ink-500">
-                  Get your API key at <a href="https://tavily.com" target="_blank" rel="noopener noreferrer" className="text-ink-700 hover:underline">tavily.com</a>
-                </p>
-              </div>
+            ) : activeTab === 'tools' ? (
+              <ToolsTab
+                enableGitTools={enableGitTools}
+                setEnableGitTools={setEnableGitTools}
+                enableBrowserTools={enableBrowserTools}
+                setEnableBrowserTools={setEnableBrowserTools}
+                enableDuckDuckGo={enableDuckDuckGo}
+                setEnableDuckDuckGo={setEnableDuckDuckGo}
+                enableFetchTools={enableFetchTools}
+                setEnableFetchTools={setEnableFetchTools}
+              />
+            ) : (
+              <MemoryModeTab
+                enableMemory={enableMemory}
+                setEnableMemory={setEnableMemory}
+                memoryContent={memoryContent}
+                setMemoryContent={setMemoryContent}
+                memoryLoading={memoryLoading}
+                loadMemoryContent={loadMemoryContent}
+                permissionMode={permissionMode}
+                setPermissionMode={setPermissionMode}
+              />
             )}
-
-            {webSearchProvider === 'zai' && (
-              <div>
-                <label className="block text-sm font-medium text-ink-700 mb-2">
-                  Z.AI API Key
-                </label>
-                <div className="relative">
-                  <input
-                    type={showZaiPassword ? "text" : "password"}
-                    value={zaiApiKey}
-                    onChange={(e) => setZaiApiKey(e.target.value)}
-                    placeholder="zai-... (optional)"
-                    className="w-full px-4 py-2.5 pr-10 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-ink-900/20 transition-all"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowZaiPassword(!showZaiPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-500 hover:text-ink-700"
-                  >
-                    {showZaiPassword ? (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                      </svg>
-                    ) : (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                    )}
-                  </button>
-                </div>
-                <p className="mt-1 text-xs text-ink-500">
-                  Get your API key at <a href="https://chat.z.ai/manage-apikey/apikey-list" target="_blank" rel="noopener noreferrer" className="text-ink-700 hover:underline">chat.z.ai</a>
-                </p>
-              </div>
-            )}
-
-            {webSearchProvider === 'zai' && (
-              <div>
-                <label className="block text-sm font-medium text-ink-700 mb-2">
-                  Z.AI API URL
-                  <span className="ml-2 text-xs font-normal text-ink-500">Select API endpoint variant</span>
-                </label>
-                <select
-                  value={zaiApiUrl}
-                  onChange={(e) => setZaiApiUrl(e.target.value as ZaiApiUrl)}
-                  className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-ink-900/20 transition-all"
-                >
-                  <option value="default">Default (https://api.z.ai/api/paas/v4/web_search)</option>
-                  <option value="coding">Coding (https://api.z.ai/api/coding/paas/v4/web_search)</option>
-                </select>
-              </div>
-            )}
-
-            <div className="border-t border-ink-900/10 pt-4">
-              <label className="block text-sm font-medium text-ink-700 mb-2">
-                Web Page Reader
-              </label>
-              <label className="flex items-center justify-between cursor-pointer">
-                <div className="flex-1">
-                  <span className="block text-sm font-medium text-ink-700">Enable Z.AI Reader</span>
-                  <p className="mt-1 text-xs text-ink-500">
-                    Use Z.AI API to read and parse web page content
-                  </p>
-                </div>
-                <div className="relative">
-                  <input
-                    type="checkbox"
-                    checked={enableZaiReader}
-                    onChange={(e) => setEnableZaiReader(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-ink-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-ink-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
-                </div>
-              </label>
-            </div>
-
-            {enableZaiReader && (
-              <div>
-                <label className="block text-sm font-medium text-ink-700 mb-2">
-                  Z.AI Reader API URL
-                  <span className="ml-2 text-xs font-normal text-ink-500">Select reader API endpoint variant</span>
-                </label>
-                <select
-                  value={zaiReaderApiUrl}
-                  onChange={(e) => setZaiReaderApiUrl(e.target.value as ZaiReaderApiUrl)}
-                  className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-ink-900/20 transition-all"
-                >
-                  <option value="default">Default (https://api.z.ai/api/paas/v4/reader)</option>
-                  <option value="coding">Coding (https://api.z.ai/api/coding/paas/v4/reader)</option>
-                </select>
-                {!zaiApiKey && (
-                  <p className="mt-1 text-xs text-amber-600">
-                    Warning: Z.AI API Key is required for reader to work. Add it in Web Search section.
-                  </p>
-                )}
-              </div>
-            )}
-
-            <div>
-              <label className="block text-sm font-medium text-ink-700 mb-2">
-                Permission Mode
-              </label>
-              <select
-                value={permissionMode}
-                onChange={(e) => setPermissionMode(e.target.value as 'default' | 'ask')}
-                className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-ink-900/20 transition-all"
-              >
-                <option value="default">Auto-execute (default)</option>
-                <option value="ask">Ask before each tool</option>
-              </select>
-              <p className="mt-1 text-xs text-ink-500">
-                Choose whether tools execute automatically or require confirmation
-              </p>
-            </div>
-
-            <div>
-              <label className="flex items-center justify-between cursor-pointer">
-                <div className="flex-1">
-                  <span className="block text-sm font-medium text-ink-700">Enable Memory</span>
-                  <p className="mt-1 text-xs text-ink-500">
-                    Allow agent to store and recall information in memory.md (stored in ~/.localdesk/)
-                  </p>
-                </div>
-                <div className="relative">
-                  <input
-                    type="checkbox"
-                    checked={enableMemory}
-                    onChange={(e) => setEnableMemory(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-ink-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-ink-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
-                </div>
-              </label>
-              {enableMemory && (
-                <div className="mt-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-medium text-ink-700">
-                      Memory Content
-                    </label>
-                    <button
-                      onClick={loadMemoryContent}
-                      disabled={memoryLoading}
-                      className="text-xs text-accent hover:underline disabled:opacity-50"
-                    >
-                      {memoryLoading ? "Loading..." : "Reload"}
-                    </button>
-                  </div>
-                  <textarea
-                    value={memoryContent}
-                    onChange={(e) => setMemoryContent(e.target.value)}
-                    placeholder="Memory is empty. Agent will automatically add information here during conversations..."
-                    className="w-full h-32 px-3 py-2 text-xs border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all resize-none font-mono"
-                  />
-                  <p className="mt-1 text-xs text-ink-500">
-                    File: <code className="bg-ink-50 px-1 py-0.5 rounded">~/.localdesk/memory.md</code>
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Tool Groups */}
-            <div className="border-t border-ink-900/10 pt-4">
-              <label className="block text-sm font-medium text-ink-700 mb-3">
-                Tool Groups
-                <span className="ml-2 text-xs font-normal text-ink-500">Enable/disable tool categories</span>
-              </label>
-              
-              {/* Git Tools */}
-              <label className="flex items-center justify-between cursor-pointer mb-3">
-                <div className="flex-1">
-                  <span className="block text-sm font-medium text-ink-700">Git Tools</span>
-                  <p className="mt-0.5 text-xs text-ink-500">
-                    11 tools: status, log, diff, branch, checkout, add, commit, push, pull, reset, show
-                  </p>
-                </div>
-                <div className="relative">
-                  <input
-                    type="checkbox"
-                    checked={enableGitTools}
-                    onChange={(e) => setEnableGitTools(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-ink-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-ink-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
-                </div>
-              </label>
-
-              {/* Browser Tools */}
-              <label className="flex items-center justify-between cursor-pointer mb-3">
-                <div className="flex-1">
-                  <span className="block text-sm font-medium text-ink-700">Browser Automation</span>
-                  <p className="mt-0.5 text-xs text-ink-500">
-                    11 tools: navigate, click, type, select, hover, scroll, press_key, wait_for, snapshot, screenshot, execute_script
-                  </p>
-                </div>
-                <div className="relative">
-                  <input
-                    type="checkbox"
-                    checked={enableBrowserTools}
-                    onChange={(e) => setEnableBrowserTools(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-ink-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-ink-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
-                </div>
-              </label>
-
-              {/* DuckDuckGo Search */}
-              <label className="flex items-center justify-between cursor-pointer mb-3">
-                <div className="flex-1">
-                  <span className="block text-sm font-medium text-ink-700">DuckDuckGo Search</span>
-                  <p className="mt-0.5 text-xs text-ink-500">
-                    3 tools: search, search_news, search_images — no API key needed
-                  </p>
-                </div>
-                <div className="relative">
-                  <input
-                    type="checkbox"
-                    checked={enableDuckDuckGo}
-                    onChange={(e) => setEnableDuckDuckGo(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-ink-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-ink-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
-                </div>
-              </label>
-
-              {/* Fetch Tools */}
-              <label className="flex items-center justify-between cursor-pointer">
-                <div className="flex-1">
-                  <span className="block text-sm font-medium text-ink-700">HTTP/Fetch Tools</span>
-                  <p className="mt-0.5 text-xs text-ink-500">
-                    3 tools: fetch, fetch_json, download — HTTP requests and file downloads
-                  </p>
-                </div>
-                <div className="relative">
-                  <input
-                    type="checkbox"
-                    checked={enableFetchTools}
-                    onChange={(e) => setEnableFetchTools(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-ink-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-ink-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
-                </div>
-              </label>
-            </div>
-
           </div>
 
           <div className="px-6 py-4 border-t border-ink-900/10 flex gap-3">
@@ -659,7 +344,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
               onClick={handleReset}
               className="flex-1 px-4 py-2.5 text-sm font-medium text-ink-600 bg-ink-50 rounded-lg hover:bg-ink-100 transition-colors"
             >
-              Reset to Default
+              Reset
             </button>
             <button
               onClick={onClose}
@@ -671,11 +356,806 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
               onClick={handleSave}
               className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-ink-900 rounded-lg hover:bg-ink-800 transition-colors"
             >
-              Save Settings
+              Save
             </button>
           </div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+function LLMModelsTab({
+  providers,
+  models,
+  loading,
+  error,
+  onToggleModel,
+  onToggleProvider,
+  onDeleteProvider,
+  onFetchModels,
+  onReloadProviders,
+  setLlmProviders
+}: {
+  providers: LLMProvider[];
+  models: LLMModel[];
+  loading: boolean;
+  error: string | null;
+  onToggleModel: (modelId: string) => void;
+  onToggleProvider: (providerId: string) => void;
+  onDeleteProvider: (providerId: string) => void;
+  onFetchModels: (providerId: string) => Promise<void>;
+  onReloadProviders: () => void;
+  setLlmProviders: (providers: LLMProvider[]) => void;
+}) {
+  const [showOnlyEnabled, setShowOnlyEnabled] = useState(false);
+  const [providerSearchQueries, setProviderSearchQueries] = useState<Record<string, string>>({});
+  const [collapsedProviders, setCollapsedProviders] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const initialCollapsed: Record<string, boolean> = {};
+    providers.forEach(p => {
+      initialCollapsed[p.id] = true;
+    });
+    setCollapsedProviders(initialCollapsed);
+  }, [providers.length]);
+
+  const handleProviderSearchChange = (providerId: string, query: string) => {
+    setProviderSearchQueries(prev => ({ ...prev, [providerId]: query }));
+  };
+
+  const toggleProviderCollapse = (providerId: string) => {
+    setCollapsedProviders(prev => ({ ...prev, [providerId]: !prev[providerId] }));
+  };
+
+  const filterModels = (providerModels: LLMModel[], searchQuery: string) => {
+    let filtered = providerModels;
+    
+    if (showOnlyEnabled) {
+      filtered = filtered.filter(m => m.enabled);
+    }
+    
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(m => 
+        m.name.toLowerCase().includes(query) || 
+        (m.description && m.description.toLowerCase().includes(query))
+      );
+    }
+    
+    return filtered;
+  };
+
+  return (
+      <div className="px-6 py-4 space-y-6">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-medium text-ink-900">LLM Providers</h3>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowOnlyEnabled(!showOnlyEnabled)}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+              showOnlyEnabled
+                ? 'bg-accent text-white'
+                : 'bg-ink-100 text-ink-600 hover:bg-ink-200'
+            }`}
+          >
+            Only enabled
+          </button>
+          <AddProviderButton 
+            onAdd={onReloadProviders} 
+            providers={providers}
+            models={models}
+            setLlmProviders={setLlmProviders}
+          />
+        </div>
+      </div>
+
+      {error && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+          <p className="text-sm text-red-700">{error}</p>
+        </div>
+      )}
+
+      {providers.length === 0 ? (
+        <div className="p-6 bg-ink-50 rounded-lg border-2 border-dashed border-ink-200 text-center">
+          <p className="text-sm text-ink-600 mb-2">
+            No providers added. Add your first provider to get started.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {providers.map((provider) => {
+            const providerModels = models.filter(m => m.providerId === provider.id);
+            const enabledModelsCount = providerModels.filter(m => m.enabled).length;
+            const searchQuery = providerSearchQueries[provider.id] || '';
+            const filteredModels = filterModels(providerModels, searchQuery);
+
+            return (
+              <div key={provider.id} className="border border-ink-200 rounded-lg overflow-hidden">
+                <div 
+                  className="px-4 py-3 bg-ink-50 flex items-center justify-between min-h-[68px] cursor-pointer hover:bg-ink-100/50 transition-colors"
+                  onClick={() => toggleProviderCollapse(provider.id)}
+                >
+                  <div className="flex items-center gap-3 flex-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleProvider(provider.id);
+                      }}
+                      className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
+                        provider.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'
+                      }`}
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                      </svg>
+                    </button>
+                    <div className="flex-1 flex items-center gap-2">
+                      <div>
+                        <p className="font-medium text-ink-900">{provider.name}</p>
+                        <p className="text-xs text-ink-500 uppercase">{provider.type}</p>
+                      </div>
+                      <svg 
+                        className={`w-4 h-4 text-ink-400 transition-transform ${collapsedProviders[provider.id] ? '' : 'rotate-180'}`} 
+                        fill="none" 
+                        stroke="currentColor" 
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-ink-600">
+                      {enabledModelsCount}/{providerModels.length} models
+                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onFetchModels(provider.id);
+                      }}
+                      disabled={loading}
+                      className="p-2 hover:bg-ink-200 rounded transition-colors disabled:opacity-50"
+                      title="Load models"
+                    >
+                      <svg className="w-4 h-4 text-ink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteProvider(provider.id);
+                      }}
+                      className="p-2 hover:bg-red-100 rounded transition-colors text-red-600"
+                      title="Delete provider"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                {!collapsedProviders[provider.id] && providerModels.length > 0 && (
+                  <>
+                    {providerModels.length > 5 && (
+                      <div className="px-4 py-2 bg-ink-50 border-t border-ink-200">
+                        <input
+                          type="text"
+                          value={searchQuery}
+                          onChange={(e) => handleProviderSearchChange(provider.id, e.target.value)}
+                          placeholder="Search models..."
+                          className="w-full px-3 py-2 text-sm border border-ink-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20"
+                        />
+                      </div>
+                    )}
+                    
+                    <div className="px-4 py-3 space-y-2 max-h-60 overflow-y-auto">
+                      {filteredModels.map((model) => (
+                        <div key={model.id} className="flex items-center justify-between py-2 border-b border-ink-100 last:border-0">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-ink-900 truncate">{model.name}</p>
+                            {model.description && (
+                              <p className="text-xs text-ink-500 truncate">{model.description}</p>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => onToggleModel(model.id)}
+                            className={`w-6 h-6 rounded flex items-center justify-center transition-colors ${
+                              model.enabled ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-400'
+                            }`}
+                          >
+                            {model.enabled ? (
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            ) : (
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            )}
+                          </button>
+                        </div>
+                      ))}
+                      
+                      {filteredModels.length === 0 && (
+                        <div className="text-center py-4">
+                          <p className="text-sm text-ink-500">
+                            {searchQuery || showOnlyEnabled ? 'No matching models found' : 'No models available'}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {providerModels.length === 0 && (
+                  <div className="px-4 py-6 text-center min-h-[100px] flex flex-col items-center justify-center">
+                    <p className="text-sm text-ink-500 mb-2">
+                      No loaded models
+                    </p>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onFetchModels(provider.id);
+                      }}
+                      disabled={loading}
+                      className="text-sm text-accent hover:underline disabled:opacity-50"
+                    >
+                      {loading ? 'Loading...' : 'Load models'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AddProviderButton({ onAdd, providers, models, setLlmProviders }: { 
+  onAdd: () => void; 
+  providers: LLMProvider[]; 
+  models: LLMModel[];
+  setLlmProviders: (providers: LLMProvider[]) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [type, setType] = useState<LLMProviderType>('openai');
+  const [name, setName] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [zaiApiPrefix, setZaiApiPrefix] = useState<'default' | 'coding'>('default');
+  const [error, setError] = useState('');
+
+  // Auto-fill base URL for Z.AI when prefix changes
+  useEffect(() => {
+    if (type === 'zai') {
+      if (zaiApiPrefix === 'default') {
+        setBaseUrl('https://api.z.ai/api/paas/v4');
+      } else if (zaiApiPrefix === 'coding') {
+        setBaseUrl('https://api.z.ai/api/coding/paas/v4');
+      }
+    }
+  }, [type, zaiApiPrefix]);
+
+  // Auto-select default prefix when Z.AI is chosen
+  useEffect(() => {
+    if (type === 'zai' && zaiApiPrefix !== 'default') {
+      setZaiApiPrefix('default');
+    }
+  }, [type]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    if (!name.trim()) {
+      setError('Provider name is required');
+      return;
+    }
+    if (!apiKey.trim()) {
+      setError('API key is required');
+      return;
+    }
+    if (type === 'openai' && !baseUrl.trim()) {
+      setError('Base URL is required');
+      return;
+    }
+
+    // Create provider
+    const newProvider: LLMProvider = {
+      id: `${type}-${name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`,
+      type,
+      name: name.trim(),
+      apiKey: apiKey.trim(),
+      baseUrl: type === 'openrouter' ? undefined : (type === 'zai' ? baseUrl.trim() : baseUrl.trim()),
+      zaiApiPrefix: type === 'zai' ? zaiApiPrefix : undefined,
+      enabled: true,
+    };
+
+    // Save to settings
+    const updatedSettings = {
+      providers: [...providers, newProvider],
+      models: models
+    };
+
+    // Immediately update local state
+    setLlmProviders([...providers, newProvider]);
+
+    window.electron.sendClientEvent({
+      type: "llm.providers.save",
+      payload: { settings: updatedSettings }
+    });
+
+    onAdd();
+    setIsOpen(false);
+    setName('');
+    setApiKey('');
+    setBaseUrl('');
+    setZaiApiPrefix('default');
+    setError('');
+  };
+
+  return (
+    <>
+      <button
+        onClick={() => setIsOpen(true)}
+        className="px-4 py-2 text-sm font-medium text-white bg-accent rounded-lg hover:bg-accent/90 transition-colors"
+      >
+        + Add Provider
+      </button>
+
+      {isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="text-lg font-semibold text-ink-900 mb-4">Add Provider</h3>
+            
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-ink-700 mb-2">
+                  Provider Type
+                </label>
+                <select
+                  value={type}
+                  onChange={(e) => setType(e.target.value as LLMProviderType)}
+                  className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20"
+                >
+                  <option value="openai">OpenAI</option>
+                  <option value="openrouter">OpenRouter</option>
+                  <option value="zai">Z.AI</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-ink-700 mb-2">
+                  Name
+                </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g., My OpenAI"
+                  className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-ink-700 mb-2">
+                  API Key
+                </label>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="sk-..."
+                  className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20"
+                />
+              </div>
+
+              {type === 'openai' && (
+                <div>
+                  <label className="block text-sm font-medium text-ink-700 mb-2">
+                    Base URL
+                  </label>
+                  <input
+                    type="text"
+                    value={baseUrl}
+                    onChange={(e) => setBaseUrl(e.target.value)}
+                    placeholder="https://api.openai.com/v1"
+                    className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20"
+                  />
+                </div>
+              )}
+
+              {type === 'zai' && (
+                <div>
+                  <label className="block text-sm font-medium text-ink-700 mb-2">
+                    Endpoint
+                  </label>
+                  <select
+                    value={zaiApiPrefix}
+                    onChange={(e) => setZaiApiPrefix(e.target.value as 'default' | 'coding')}
+                    className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20"
+                  >
+                    <option value="default">Default (https://api.z.ai/api/paas/v4)</option>
+                    <option value="coding">Coding (https://api.z.ai/api/coding/paas/v4)</option>
+                  </select>
+                </div>
+              )}
+              
+              {error && (
+                <p className="text-sm text-red-600">{error}</p>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsOpen(false)}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-ink-600 bg-ink-50 rounded-lg hover:bg-ink-100 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-accent rounded-lg hover:bg-accent/90 transition-colors"
+                >
+                  Add
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function WebToolsTab({
+  tavilyApiKey,
+  setTavilyApiKey,
+  zaiApiKey,
+  setZaiApiKey,
+  webSearchProvider,
+  setWebSearchProvider,
+  zaiApiUrl,
+  setZaiApiUrl,
+  enableZaiReader,
+  setEnableZaiReader,
+  zaiReaderApiUrl,
+  setZaiReaderApiUrl,
+  showTavilyPassword,
+  setShowTavilyPassword,
+  showZaiPassword,
+  setShowZaiPassword
+}: any) {
+  return (
+    <div className="px-6 py-4 space-y-6">
+      <div>
+        <label className="block text-sm font-medium text-ink-700 mb-2">
+          Web Search Provider
+          <span className="ml-2 text-xs font-normal text-ink-500">Select search engine for web search</span>
+        </label>
+        <select
+          value={webSearchProvider}
+          onChange={(e) => setWebSearchProvider(e.target.value as WebSearchProvider)}
+          className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all"
+        >
+          <option value="tavily">Tavily</option>
+          <option value="zai">Z.AI</option>
+        </select>
+      </div>
+
+      {webSearchProvider === 'tavily' && (
+        <div>
+          <label className="block text-sm font-medium text-ink-700 mb-2">
+            Tavily API Key
+          </label>
+          <div className="relative">
+            <input
+              type={showTavilyPassword ? "text" : "password"}
+              value={tavilyApiKey}
+              onChange={(e) => setTavilyApiKey(e.target.value)}
+              placeholder="tvly-... (optional)"
+              className="w-full px-4 py-2.5 pr-10 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all"
+            />
+            <button
+              type="button"
+              onClick={() => setShowTavilyPassword(!showTavilyPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-500 hover:text-ink-700"
+            >
+              {showTavilyPassword ? (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+              )}
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-ink-500">
+            Получите API ключ на <a href="https://tavily.com" target="_blank" rel="noopener noreferrer" className="text-ink-700 hover:underline">tavily.com</a>
+          </p>
+        </div>
+      )}
+
+      {webSearchProvider === 'zai' && (
+        <div>
+          <label className="block text-sm font-medium text-ink-700 mb-2">
+            Z.AI API Key
+          </label>
+          <div className="relative">
+            <input
+              type={showZaiPassword ? "text" : "password"}
+              value={zaiApiKey}
+              onChange={(e) => setZaiApiKey(e.target.value)}
+              placeholder="zai-... (optional)"
+              className="w-full px-4 py-2.5 pr-10 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all"
+            />
+            <button
+              type="button"
+              onClick={() => setShowZaiPassword(!showZaiPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-500 hover:text-ink-700"
+            >
+              {showZaiPassword ? (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+              )}
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-ink-500">
+            Получите API ключ на <a href="https://chat.z.ai/manage-apikey/apikey-list" target="_blank" rel="noopener noreferrer" className="text-ink-700 hover:underline">chat.z.ai</a>
+          </p>
+        </div>
+      )}
+
+      {webSearchProvider === 'zai' && (
+        <div>
+          <label className="block text-sm font-medium text-ink-700 mb-2">
+            Z.AI API URL
+            <span className="ml-2 text-xs font-normal text-ink-500">Выберите вариант endpoint</span>
+          </label>
+          <select
+            value={zaiApiUrl}
+            onChange={(e) => setZaiApiUrl(e.target.value as ZaiApiUrl)}
+            className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all"
+          >
+            <option value="default">Default (https://api.z.ai/api/paas/v4/web_search)</option>
+            <option value="coding">Coding (https://api.z.ai/api/coding/paas/v4/web_search)</option>
+          </select>
+        </div>
+      )}
+
+      <div className="border-t border-ink-900/10 pt-4">
+        <label className="block text-sm font-medium text-ink-700 mb-2">
+          Web Page Reader
+        </label>
+        <label className="flex items-center justify-between cursor-pointer">
+          <div className="flex-1">
+            <span className="block text-sm font-medium text-ink-700">Enable Z.AI Reader</span>
+            <p className="mt-1 text-xs text-ink-500">
+              Use Z.AI API to read and parse web page content
+            </p>
+          </div>
+          <div className="relative">
+            <input
+              type="checkbox"
+              checked={enableZaiReader}
+              onChange={(e) => setEnableZaiReader(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-ink-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-ink-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
+          </div>
+        </label>
+      </div>
+
+      {enableZaiReader && (
+        <div>
+          <label className="block text-sm font-medium text-ink-700 mb-2">
+            Z.AI Reader API URL
+            <span className="ml-2 text-xs font-normal text-ink-500">Выберите вариант endpoint</span>
+          </label>
+          <select
+            value={zaiReaderApiUrl}
+            onChange={(e) => setZaiReaderApiUrl(e.target.value as ZaiReaderApiUrl)}
+            className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all"
+          >
+            <option value="default">Default (https://api.z.ai/api/paas/v4/reader)</option>
+            <option value="coding">Coding (https://api.z.ai/api/coding/paas/v4/reader)</option>
+          </select>
+          {!zaiApiKey && (
+            <p className="mt-1 text-xs text-amber-600">
+              Warning: Z.AI API Key is required for reader to work. Add it in Web Search section.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToolsTab({
+  enableGitTools,
+  setEnableGitTools,
+  enableBrowserTools,
+  setEnableBrowserTools,
+  enableDuckDuckGo,
+  setEnableDuckDuckGo,
+  enableFetchTools,
+  setEnableFetchTools
+}: any) {
+  return (
+    <div className="px-6 py-4 space-y-6">
+      <div>
+        <label className="block text-sm font-medium text-ink-700 mb-3">
+          Tool Groups
+          <span className="ml-2 text-xs font-normal text-ink-500">Enable/disable tool categories</span>
+        </label>
+        
+        {/* Git Tools */}
+        <label className="flex items-center justify-between cursor-pointer mb-4">
+          <div className="flex-1">
+            <span className="block text-sm font-medium text-ink-700">Git Tools</span>
+            <p className="mt-0.5 text-xs text-ink-500">
+              11 tools: status, log, diff, branch, checkout, add, commit, push, pull, reset, show
+            </p>
+          </div>
+          <div className="relative">
+            <input
+              type="checkbox"
+              checked={enableGitTools}
+              onChange={(e) => setEnableGitTools(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-ink-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-ink-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
+          </div>
+        </label>
+
+        {/* Browser Tools */}
+        <label className="flex items-center justify-between cursor-pointer mb-4">
+          <div className="flex-1">
+            <span className="block text-sm font-medium text-ink-700">Browser Automation</span>
+            <p className="mt-0.5 text-xs text-ink-500">
+              11 tools: navigate, click, type, select, hover, scroll, press_key, wait_for, snapshot, screenshot, execute_script
+            </p>
+          </div>
+          <div className="relative">
+            <input
+              type="checkbox"
+              checked={enableBrowserTools}
+              onChange={(e) => setEnableBrowserTools(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-ink-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-ink-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
+          </div>
+        </label>
+
+        {/* DuckDuckGo Search */}
+        <label className="flex items-center justify-between cursor-pointer mb-4">
+          <div className="flex-1">
+            <span className="block text-sm font-medium text-ink-700">DuckDuckGo Search</span>
+            <p className="mt-0.5 text-xs text-ink-500">
+              3 tools: search, search_news, search_images — no API key needed
+            </p>
+          </div>
+          <div className="relative">
+            <input
+              type="checkbox"
+              checked={enableDuckDuckGo}
+              onChange={(e) => setEnableDuckDuckGo(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-ink-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-ink-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
+          </div>
+        </label>
+
+        {/* Fetch Tools */}
+        <label className="flex items-center justify-between cursor-pointer">
+          <div className="flex-1">
+            <span className="block text-sm font-medium text-ink-700">HTTP/Fetch Tools</span>
+            <p className="mt-0.5 text-xs text-ink-500">
+              3 tools: fetch, fetch_json, download — HTTP requests and file downloads
+            </p>
+          </div>
+          <div className="relative">
+            <input
+              type="checkbox"
+              checked={enableFetchTools}
+              onChange={(e) => setEnableFetchTools(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-ink-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-ink-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
+          </div>
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function MemoryModeTab({
+  enableMemory,
+  setEnableMemory,
+  memoryContent,
+  setMemoryContent,
+  memoryLoading,
+  loadMemoryContent,
+  permissionMode,
+  setPermissionMode
+}: any) {
+  return (
+    <div className="px-6 py-4 space-y-6">
+      <div>
+        <label className="flex items-center justify-between cursor-pointer">
+          <div className="flex-1">
+            <span className="block text-sm font-medium text-ink-700">Enable Memory</span>
+            <p className="mt-1 text-xs text-ink-500">
+              Allow agent to store and recall information in memory.md (stored in ~/.localdesk/)
+            </p>
+          </div>
+          <div className="relative">
+            <input
+              type="checkbox"
+              checked={enableMemory}
+              onChange={(e) => setEnableMemory(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-ink-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-ink-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
+          </div>
+        </label>
+        {enableMemory && (
+          <div className="mt-4">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-medium text-ink-700">
+                Memory Content
+              </label>
+              <button
+                onClick={loadMemoryContent}
+                disabled={memoryLoading}
+                className="text-xs text-accent hover:underline disabled:opacity-50"
+              >
+                {memoryLoading ? "Loading..." : "Reload"}
+              </button>
+            </div>
+            <textarea
+              value={memoryContent}
+              onChange={(e) => setMemoryContent(e.target.value)}
+              placeholder="Memory is empty. Agent will automatically add information here during conversations..."
+              className="w-full h-32 px-3 py-2 text-xs border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all resize-none font-mono"
+            />
+            <p className="mt-1 text-xs text-ink-500">
+              File: <code className="bg-ink-50 px-1 py-0.5 rounded">~/.localdesk/memory.md</code>
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-ink-900/10 pt-6">
+        <label className="block text-sm font-medium text-ink-700 mb-2">
+          Permission Mode
+        </label>
+        <select
+          value={permissionMode}
+          onChange={(e) => setPermissionMode(e.target.value as 'default' | 'ask')}
+          className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-ink-900/20 transition-all"
+        >
+          <option value="default">Auto-execute (default)</option>
+          <option value="ask">Ask before each tool</option>
+        </select>
+        <p className="mt-1 text-xs text-ink-500">
+          Choose whether tools execute automatically or require confirmation
+        </p>
+      </div>
+    </div>
   );
 }

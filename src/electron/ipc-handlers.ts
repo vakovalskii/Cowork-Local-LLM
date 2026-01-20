@@ -13,6 +13,8 @@ import { sessionManager } from "./session-manager.js";
 import * as gitUtils from "./git-utils.js";
 import type { CreateTaskPayload, ThreadTask } from "./types.js";
 import { webCache } from "./libs/web-cache.js";
+import { loadLLMProviderSettings, saveLLMProviderSettings } from "./libs/llm-providers-store.js";
+import { fetchModelsFromProvider, checkModelsAvailability, validateProvider, createProvider } from "./libs/llm-providers.js";
 
 const DB_PATH = join(app.getPath("userData"), "sessions.db");
 const sessions = new SessionStore(DB_PATH);
@@ -99,7 +101,7 @@ function checkAndUpdateMultiThreadTaskStatus(sessionId: string, emitFn: (event: 
     const running = threadStatuses.filter(s => s === 'running').length;
 
     // Determine task status
-    let newStatus: 'running' | 'completed' | 'error' = task.status;
+    let newStatus: 'created' | 'running' | 'completed' | 'error' = task.status;
 
     if (running === 0) {
       // All threads stopped - check if completed or had errors
@@ -119,12 +121,119 @@ function checkAndUpdateMultiThreadTaskStatus(sessionId: string, emitFn: (event: 
         payload: { taskId, status: newStatus }
       });
       console.log(`[IPC] Task ${taskId} status updated to ${newStatus} (${completed}/${total} completed, ${error} errors)`);
+
+      // If task completed and auto-summary is enabled, create summary thread
+      if (newStatus === 'completed' && task.autoSummary) {
+        createSummaryThread(taskId, task, emitFn);
+      }
     }
     break;
   }
 }
 
-export function handleClientEvent(event: ClientEvent, windowId: number) {
+// Create a summary thread after all threads complete
+async function createSummaryThread(taskId: string, task: MultiThreadTask, emitFn: (event: ServerEvent) => void) {
+  console.log(`[IPC] Creating summary thread for task ${taskId}...`);
+
+  // Collect all thread responses
+  const threadResponses: { threadId: string; model: string; messages: any[] }[] = [];
+
+  for (const threadId of task.threadIds) {
+    const history = sessions.getSessionHistory(threadId);
+    if (history && history.messages) {
+      const thread = sessions.getSession(threadId);
+      threadResponses.push({
+        threadId,
+        model: thread?.model || 'unknown',
+        messages: history.messages
+      });
+    }
+  }
+
+  // Build summary prompt
+  const summaryPrompt = `You are a summarization assistant. Here are ${threadResponses.length} responses from different AI models working on the same task.
+
+Task: "${task.title}"
+
+${threadResponses.map((r, i) => `
+--- Thread ${i + 1} (${r.model}) ---
+${r.messages.map(m => {
+  if (m.type === 'user_prompt') return `User: ${m.prompt}`;
+  if (m.type === 'result' && m.content) return `Response: ${JSON.stringify(m.content)}`;
+  return '';
+}).join('\n')}
+--- End Thread ${i + 1} ---
+`).join('\n')}
+
+Please provide:
+1. A comprehensive summary of what all threads accomplished
+2. Key findings or insights from each thread
+3. Any contradictions or differences between threads
+4. A final consolidated result or recommendation
+
+Format your response clearly with sections.`;
+
+  // Create summary session
+  const summarySession = sessions.createSession({
+    title: `${task.title} - Summary`,
+    cwd: undefined,
+    allowedTools: '', // No tools for summary
+    model: task.consensusModel || 'gpt-4',
+    threadId: 'summary'
+  });
+
+  // Add summary thread to task
+  task.threadIds.push(summarySession.id);
+  task.updatedAt = Date.now();
+
+  // Get session
+  const session = sessions.getSession(summarySession.id);
+  if (!session) {
+    console.error('[IPC] Failed to create summary session');
+    return;
+  }
+
+  // Start the summary thread
+  sessions.updateSession(summarySession.id, { status: "running", lastPrompt: summaryPrompt });
+  emitFn({
+    type: "stream.user_prompt",
+    payload: { sessionId: summarySession.id, threadId: 'summary', prompt: summaryPrompt }
+  });
+
+  try {
+    const handle = await runClaude({
+      prompt: summaryPrompt,
+      session,
+      resumeSessionId: undefined,
+      onEvent: emitFn,
+      onSessionUpdate: (updates) => {
+        sessions.updateSession(summarySession.id, updates);
+      }
+    });
+
+    runnerHandles.set(summarySession.id, handle);
+    sessions.setAbortController(summarySession.id, undefined);
+
+    // Broadcast session creation so UI shows the summary thread
+    emitFn({
+      type: "session.status",
+      payload: {
+        sessionId: summarySession.id,
+        status: "running",
+        title: `${task.title} - Summary`,
+        model: task.consensusModel || 'gpt-4'
+      }
+    });
+  } catch (error) {
+    sessions.updateSession(summarySession.id, { status: "error" });
+    emitFn({
+      type: "runner.error",
+      payload: { sessionId: summarySession.id, message: String(error) }
+    });
+  }
+}
+
+export async function handleClientEvent(event: ClientEvent, windowId: number) {
   if (event.type === "session.list") {
     sessionManager.emitToWindow(windowId, {
       type: "session.list",
@@ -567,7 +676,7 @@ export function handleClientEvent(event: ClientEvent, windowId: number) {
     const now = Date.now();
 
     if (mode === 'consensus') {
-      // Create N threads with the same model and prompt
+      // Create N threads with the same model and prompt - DON'T START THEM YET
       const consensusModel = payload.consensusModel || 'gpt-4';
       const quantity = payload.consensusQuantity || 5;
       const consensusPrompt = (payload as any).consensusPrompt || '';
@@ -579,7 +688,6 @@ export function handleClientEvent(event: ClientEvent, windowId: number) {
           title: threadTitle,
           cwd,
           allowedTools,
-          prompt: consensusPrompt,
           model: consensusModel,
           threadId: `thread-${i + 1}`
         });
@@ -589,49 +697,13 @@ export function handleClientEvent(event: ClientEvent, windowId: number) {
         createdThreads.push({
           threadId: thread.id,
           model: consensusModel,
-          status: thread.status,
+          status: 'idle',
           createdAt: now,
           updatedAt: now
         });
-
-        // Start the thread with the prompt
-        if (consensusPrompt && consensusPrompt.trim() !== '') {
-          sessions.updateSession(thread.id, { status: "running", lastPrompt: consensusPrompt });
-          emit({
-            type: "stream.user_prompt",
-            payload: { sessionId: thread.id, threadId: thread.id, prompt: consensusPrompt }
-          });
-
-          runClaude({
-            prompt: consensusPrompt,
-            session: thread,
-            resumeSessionId: thread.claudeSessionId,
-            onEvent: emit,
-            onSessionUpdate: (updates) => {
-              sessions.updateSession(thread.id, updates);
-            }
-          })
-            .then((handle) => {
-              runnerHandles.set(thread.id, handle);
-              sessions.setAbortController(thread.id, undefined);
-
-              // Check if this is the last thread and auto-summary is enabled
-              if (i === quantity - 1 && payload.autoSummary) {
-                // TODO: Create summary thread after all threads complete
-                console.log('[IPC] All consensus threads completed, creating summary...');
-              }
-            })
-            .catch((error) => {
-              sessions.updateSession(thread.id, { status: "error" });
-              emit({
-                type: "runner.error",
-                payload: { sessionId: thread.id, message: String(error) }
-              });
-            });
-        }
       }
     } else if (mode === 'different_tasks' && payload.tasks) {
-      // Create threads with different models and tasks
+      // Create threads with different models and tasks - DON'T START THEM YET
       const tasks = payload.tasks as ThreadTask[];
 
       for (let i = 0; i < tasks.length; i++) {
@@ -642,7 +714,6 @@ export function handleClientEvent(event: ClientEvent, windowId: number) {
           title: threadTitle,
           cwd,
           allowedTools,
-          prompt: task.prompt,
           model: task.model,
           threadId: `thread-${i + 1}`
         });
@@ -652,44 +723,14 @@ export function handleClientEvent(event: ClientEvent, windowId: number) {
         createdThreads.push({
           threadId: thread.id,
           model: task.model,
-          status: thread.status,
+          status: 'idle',
           createdAt: now,
           updatedAt: now
         });
-
-        // Start the thread with its prompt
-        if (task.prompt && task.prompt.trim() !== '') {
-          sessions.updateSession(thread.id, { status: "running", lastPrompt: task.prompt });
-          emit({
-            type: "stream.user_prompt",
-            payload: { sessionId: thread.id, threadId: thread.id, prompt: task.prompt }
-          });
-
-          runClaude({
-            prompt: task.prompt,
-            session: thread,
-            resumeSessionId: thread.claudeSessionId,
-            onEvent: emit,
-            onSessionUpdate: (updates) => {
-              sessions.updateSession(thread.id, updates);
-            }
-          })
-            .then((handle) => {
-              runnerHandles.set(thread.id, handle);
-              sessions.setAbortController(thread.id, undefined);
-            })
-            .catch((error) => {
-              sessions.updateSession(thread.id, { status: "error" });
-              emit({
-                type: "runner.error",
-                payload: { sessionId: thread.id, message: String(error) }
-              });
-            });
-        }
       }
     }
 
-    // Create MultiThreadTask object
+    // Create MultiThreadTask object - status is 'created' initially
     const taskId = `task-${now}`;
     const task = {
       id: taskId,
@@ -697,7 +738,7 @@ export function handleClientEvent(event: ClientEvent, windowId: number) {
       mode,
       createdAt: now,
       updatedAt: now,
-      status: 'running' as const,
+      status: 'created' as const,  // Start with 'created' not 'running'
       threadIds,
       shareWebCache,
       consensusModel: payload.consensusModel,
@@ -707,11 +748,209 @@ export function handleClientEvent(event: ClientEvent, windowId: number) {
       tasks: payload.tasks
     };
 
+    multiThreadTasks.set(taskId, task);
+
     // Emit task.created event with task object and created threads
     sessionManager.emitToWindow(windowId, {
       type: "task.created",
       payload: { task, threads: createdThreads }
     });
+
+    // Broadcast session.list to update UI with new thread sessions
+    const allSessions = sessions.listSessions();
+    broadcast({
+      type: "session.list",
+      payload: { sessions: allSessions }
+    });
+
+    // Auto-start task immediately
+    // Update task status to 'running'
+    (task as any).status = 'running';
+    (task as any).updatedAt = Date.now();
+
+    // Broadcast task status update
+    broadcast({
+      type: "task.status",
+      payload: { taskId, status: 'running' }
+    });
+
+    // Start all threads
+    if (task.mode === 'consensus') {
+      const consensusPrompt = task.consensusPrompt || '';
+
+      for (const threadId of task.threadIds) {
+        const thread = sessions.getSession(threadId);
+        if (!thread) continue;
+
+        // Start the thread with the prompt
+        if (consensusPrompt && consensusPrompt.trim() !== '') {
+          sessions.updateSession(threadId, { status: "running", lastPrompt: consensusPrompt });
+          emit({
+            type: "stream.user_prompt",
+            payload: { sessionId: threadId, threadId, prompt: consensusPrompt }
+          });
+
+          runClaude({
+            prompt: consensusPrompt,
+            session: thread,
+            resumeSessionId: thread.claudeSessionId,
+            onEvent: emit,
+            onSessionUpdate: (updates) => {
+              sessions.updateSession(threadId, updates);
+            }
+          })
+            .then((handle) => {
+              runnerHandles.set(threadId, handle);
+              sessions.setAbortController(threadId, undefined);
+            })
+            .catch((error) => {
+              sessions.updateSession(threadId, { status: "error" });
+              emit({
+                type: "runner.error",
+                payload: { sessionId: threadId, message: error.message }
+              });
+            });
+        }
+      }
+    } else if (task.mode === 'different_tasks' && task.tasks) {
+      for (let i = 0; i < task.threadIds.length; i++) {
+        const threadId = task.threadIds[i];
+        const taskPrompt = task.tasks[i]?.prompt || '';
+        const thread = sessions.getSession(threadId);
+        if (!thread) continue;
+
+        // Start thread with its prompt
+        if (taskPrompt && taskPrompt.trim() !== '') {
+          sessions.updateSession(threadId, { status: "running", lastPrompt: taskPrompt });
+          emit({
+            type: "stream.user_prompt",
+            payload: { sessionId: threadId, threadId, prompt: taskPrompt }
+          });
+
+          runClaude({
+            prompt: taskPrompt,
+            session: thread,
+            resumeSessionId: thread.claudeSessionId,
+            onEvent: emit,
+            onSessionUpdate: (updates) => {
+              sessions.updateSession(threadId, updates);
+            }
+          })
+            .then((handle) => {
+              runnerHandles.set(threadId, handle);
+              sessions.setAbortController(threadId, undefined);
+            })
+            .catch((error) => {
+              sessions.updateSession(threadId, { status: "error" });
+              emit({
+                type: "runner.error",
+                payload: { sessionId: threadId, message: error.message }
+              });
+            });
+        }
+      }
+    }
+    return;
+  }
+
+  if (event.type === "task.start") {
+    const { taskId } = event.payload;
+    const task = multiThreadTasks.get(taskId);
+
+    if (!task) {
+      sessionManager.emitToWindow(windowId, {
+        type: "task.error",
+        payload: { message: `Task ${taskId} not found` }
+      });
+      return;
+    }
+
+    // Update task status to 'running'
+    task.status = 'running';
+    task.updatedAt = Date.now();
+
+    // Broadcast task status update
+    broadcast({
+      type: "task.status",
+      payload: { taskId, status: 'running' }
+    });
+
+    // Start all threads
+    if (task.mode === 'consensus') {
+      const consensusPrompt = task.consensusPrompt || '';
+
+      for (const threadId of task.threadIds) {
+        const thread = sessions.getSession(threadId);
+        if (!thread) continue;
+
+        // Start the thread with the prompt
+        if (consensusPrompt && consensusPrompt.trim() !== '') {
+          sessions.updateSession(threadId, { status: "running", lastPrompt: consensusPrompt });
+          emit({
+            type: "stream.user_prompt",
+            payload: { sessionId: threadId, threadId, prompt: consensusPrompt }
+          });
+
+          runClaude({
+            prompt: consensusPrompt,
+            session: thread,
+            resumeSessionId: thread.claudeSessionId,
+            onEvent: emit,
+            onSessionUpdate: (updates) => {
+              sessions.updateSession(threadId, updates);
+            }
+          })
+            .then((handle) => {
+              runnerHandles.set(threadId, handle);
+              sessions.setAbortController(threadId, undefined);
+            })
+            .catch((error) => {
+              sessions.updateSession(threadId, { status: "error" });
+              emit({
+                type: "runner.error",
+                payload: { sessionId: threadId, message: String(error) }
+              });
+            });
+        }
+      }
+    } else if (task.mode === 'different_tasks' && task.tasks) {
+      for (let i = 0; i < task.threadIds.length; i++) {
+        const threadId = task.threadIds[i];
+        const taskPrompt = task.tasks[i]?.prompt || '';
+        const thread = sessions.getSession(threadId);
+        if (!thread) continue;
+
+        // Start the thread with its prompt
+        if (taskPrompt && taskPrompt.trim() !== '') {
+          sessions.updateSession(threadId, { status: "running", lastPrompt: taskPrompt });
+          emit({
+            type: "stream.user_prompt",
+            payload: { sessionId: threadId, threadId, prompt: taskPrompt }
+          });
+
+          runClaude({
+            prompt: taskPrompt,
+            session: thread,
+            resumeSessionId: thread.claudeSessionId,
+            onEvent: emit,
+            onSessionUpdate: (updates) => {
+              sessions.updateSession(threadId, updates);
+            }
+          })
+            .then((handle) => {
+              runnerHandles.set(threadId, handle);
+              sessions.setAbortController(threadId, undefined);
+            })
+            .catch((error) => {
+              sessions.updateSession(threadId, { status: "error" });
+              emit({
+                type: "runner.error",
+                payload: { sessionId: threadId, message: String(error) }
+              });
+            });
+        }
+      }
+    }
     return;
   }
 
@@ -787,6 +1026,124 @@ export function handleClientEvent(event: ClientEvent, windowId: number) {
     emit({
       type: "file_changes.rolledback",
       payload: { sessionId, fileChanges: remainingChanges }
+    });
+    return;
+  }
+
+  // LLM Providers handlers
+  if (event.type === "llm.providers.get") {
+    const settings = loadLLMProviderSettings();
+    sessionManager.emitToWindow(windowId, {
+      type: "llm.providers.loaded",
+      payload: { settings: settings || { providers: [], models: [] } }
+    });
+    return;
+  }
+
+  if (event.type === "llm.providers.save") {
+    try {
+      saveLLMProviderSettings(event.payload.settings);
+      sessionManager.emitToWindow(windowId, {
+        type: "llm.providers.saved",
+        payload: { settings: event.payload.settings }
+      });
+    } catch (error) {
+      sessionManager.emitToWindow(windowId, {
+        type: "runner.error",
+        payload: { message: `Failed to save LLM providers: ${error}` }
+      });
+    }
+    return;
+  }
+
+  if (event.type === "llm.models.fetch") {
+    const { providerId } = event.payload;
+    const settings = loadLLMProviderSettings();
+    
+    if (!settings) {
+      sessionManager.emitToWindow(windowId, {
+        type: "llm.models.error",
+        payload: { providerId, message: "No settings found" }
+      });
+      return;
+    }
+
+    const provider = settings.providers.find(p => p.id === providerId);
+    if (!provider) {
+      sessionManager.emitToWindow(windowId, {
+        type: "llm.models.error",
+        payload: { providerId, message: "Provider not found" }
+      });
+      return;
+    }
+
+    fetchModelsFromProvider(provider)
+      .then(models => {
+        // Merge with existing models
+        const existingSettings = loadLLMProviderSettings() || { providers: [], models: [] };
+        
+        // Remove old models for this provider
+        const existingModels = existingSettings.models.filter(m => m.providerId !== providerId);
+        
+        // Add new models
+        const updatedModels = [...existingModels, ...models];
+        
+        // Update settings
+        const updatedSettings = {
+          ...existingSettings,
+          models: updatedModels
+        };
+        
+        saveLLMProviderSettings(updatedSettings);
+        
+        sessionManager.emitToWindow(windowId, {
+          type: "llm.models.fetched",
+          payload: { providerId, models }
+        });
+      })
+      .catch(error => {
+        console.error('[IPC] Failed to fetch models:', error);
+        sessionManager.emitToWindow(windowId, {
+          type: "llm.models.error",
+          payload: { providerId, message: String(error) }
+        });
+      });
+    return;
+  }
+
+  if (event.type === "llm.models.check") {
+    const settings = loadLLMProviderSettings();
+    if (!settings) {
+      sessionManager.emitToWindow(windowId, {
+        type: "runner.error",
+        payload: { message: "No LLM provider settings found" }
+      });
+      return;
+    }
+
+    const unavailableModels: string[] = [];
+    const enabledProviders = settings.providers.filter(p => p.enabled);
+
+    // Check each provider
+    for (const provider of enabledProviders) {
+      const providerModels = settings.models.filter(m => m.providerId === provider.id && m.enabled);
+      const unavailable = await checkModelsAvailability(provider, providerModels);
+      unavailableModels.push(...unavailable);
+    }
+
+    // Disable unavailable models
+    if (unavailableModels.length > 0) {
+      const updatedModels = settings.models.map(m => 
+        unavailableModels.includes(m.id) ? { ...m, enabled: false } : m
+      );
+      
+      const updatedSettings = { ...settings, models: updatedModels };
+      saveLLMProviderSettings(updatedSettings);
+    }
+
+    sessionManager.emitToWindow(windowId, {
+      type: "llm.models.checked",
+      payload: { unavailableModels }
     });
     return;
   }

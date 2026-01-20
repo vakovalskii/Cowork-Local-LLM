@@ -35,6 +35,7 @@ export type ApiSettings = {
   enableBrowserTools?: boolean; // Enable browser_* tools (11 tools)
   enableDuckDuckGo?: boolean; // Enable search/search_news/search_images (no API key needed)
   enableFetchTools?: boolean; // Enable fetch/fetch_json/download tools
+  llmProviders?: LLMProviderSettings; // LLM providers and models configuration
 };
 
 export type ModelInfo = {
@@ -42,6 +43,36 @@ export type ModelInfo = {
   name: string;
   description?: string;
 };
+
+// LLM Provider types
+export type LLMProviderType = 'openai' | 'openrouter' | 'zai';
+
+export type ZaiApiUrlPrefix = 'default' | 'coding';
+
+export interface LLMProvider {
+  id: string;
+  type: LLMProviderType;
+  name: string;
+  apiKey: string;
+  baseUrl?: string;
+  zaiApiPrefix?: ZaiApiUrlPrefix; // Only for zai provider
+  enabled: boolean;
+}
+
+export interface LLMModel {
+  id: string;
+  name: string;
+  providerId: string;
+  providerType: LLMProviderType;
+  description?: string;
+  enabled: boolean;
+  contextLength?: number;
+}
+
+export interface LLMProviderSettings {
+  providers: LLMProvider[];
+  models: LLMModel[];
+}
 
 export type UserPromptMessage = {
   type: "user_prompt";
@@ -100,7 +131,7 @@ export type MultiThreadTask = {
   mode: TaskMode;
   createdAt: number;
   updatedAt: number;
-  status: 'running' | 'completed' | 'error';
+  status: 'created' | 'running' | 'completed' | 'error';
   threadIds: string[];
   shareWebCache?: boolean;
   consensusModel?: string;
@@ -120,7 +151,8 @@ export type ServerEvent =
   | { type: "session.deleted"; payload: { sessionId: string } }
   | { type: "thread.list"; payload: { sessionId: string; threads: ThreadInfo[] } }
   | { type: "task.created"; payload: { task: MultiThreadTask; threads: ThreadInfo[] } }
-  | { type: "task.status"; payload: { taskId: string; status: 'running' | 'completed' | 'error' } }
+  | { type: "task.status"; payload: { taskId: string; status: 'created' | 'running' | 'completed' | 'error' } }
+  | { type: "task.error"; payload: { message: string } }
   | { type: "task.deleted"; payload: { taskId: string } }
   | { type: "permission.request"; payload: { sessionId: string; threadId?: string; toolUseId: string; toolName: string; input: unknown; explanation?: string } }
   | { type: "runner.error"; payload: { sessionId?: string; threadId?: string; message: string } }
@@ -131,7 +163,12 @@ export type ServerEvent =
   | { type: "file_changes.updated"; payload: { sessionId: string; threadId?: string; fileChanges: FileChange[] } }
   | { type: "file_changes.confirmed"; payload: { sessionId: string; threadId?: string } }
   | { type: "file_changes.rolledback"; payload: { sessionId: string; threadId?: string; fileChanges: FileChange[] } }
-  | { type: "file_changes.error"; payload: { sessionId: string; threadId?: string; message: string } };
+  | { type: "file_changes.error"; payload: { sessionId: string; threadId?: string; message: string } }
+  | { type: "llm.providers.loaded"; payload: { settings: LLMProviderSettings } }
+  | { type: "llm.providers.saved"; payload: { settings: LLMProviderSettings } }
+  | { type: "llm.models.fetched"; payload: { providerId: string; models: LLMModel[] } }
+  | { type: "llm.models.error"; payload: { providerId: string; message: string } }
+  | { type: "llm.models.checked"; payload: { unavailableModels: string[] } };
 
 // Task creation types
 export type TaskMode = 'consensus' | 'different_tasks';
@@ -173,7 +210,12 @@ export type ClientEvent =
   | { type: "open.external"; payload: { url: string } }
   | { type: "models.get" }
   | { type: "task.create"; payload: CreateTaskPayload }
+  | { type: "task.start"; payload: { taskId: string } }
   | { type: "task.delete"; payload: { taskId: string } }
   | { type: "thread.list"; payload: { sessionId: string } }
   | { type: "file_changes.confirm"; payload: { sessionId: string; threadId?: string } }
-  | { type: "file_changes.rollback"; payload: { sessionId: string; threadId?: string } };
+  | { type: "file_changes.rollback"; payload: { sessionId: string; threadId?: string } }
+  | { type: "llm.providers.get" }
+  | { type: "llm.providers.save"; payload: { settings: LLMProviderSettings } }
+  | { type: "llm.models.fetch"; payload: { providerId: string } }
+  | { type: "llm.models.check" };

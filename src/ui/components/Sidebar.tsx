@@ -21,11 +21,15 @@ export function Sidebar({
   onOpenTaskDialog,
   apiSettings
 }: SidebarProps) {
+  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const sessions = useAppStore((state) => state.sessions);
   const activeSessionId = useAppStore((state) => state.activeSessionId);
   const setActiveSessionId = useAppStore((state) => state.setActiveSessionId);
   const sendEvent = useAppStore((state) => state.sendEvent);
+  const multiThreadTasks = useAppStore((state) => state.multiThreadTasks);
+  const deleteMultiThreadTask = useAppStore((state) => state.deleteMultiThreadTask);
   const [searchQuery, setSearchQuery] = useState("");
+
 
   const formatCwd = (cwd?: string) => {
     if (!cwd) return "Working dir unavailable";
@@ -40,19 +44,19 @@ export function Sidebar({
   };
 
   const sessionList = useMemo(() => {
-    let list = Object.values(sessions);
+    let sessionsList = Object.values(sessions);
     
     // Filter by search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      list = list.filter(session => 
+      sessionsList = sessionsList.filter(session => 
         session.title.toLowerCase().includes(query) ||
         session.cwd?.toLowerCase().includes(query)
       );
     }
     
-    // Sort: pinned first, then by updatedAt
-    list.sort((a, b) => {
+    // Sort sessions: pinned first, then by updatedAt
+    sessionsList.sort((a, b) => {
       const aPinned = a.isPinned || false;
       const bPinned = b.isPinned || false;
       
@@ -62,8 +66,21 @@ export function Sidebar({
       return (b.updatedAt ?? 0) - (a.updatedAt ?? 0);
     });
     
-    return list;
+    return sessionsList;
   }, [sessions, searchQuery]);
+
+  const filteredMultiThreadTasks = useMemo(() => {
+    let multiThreadList = Object.values(multiThreadTasks);
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      multiThreadList = multiThreadList.filter(task => 
+        task.title.toLowerCase().includes(query)
+      );
+    }
+    
+    // Sort multi-thread tasks by updatedAt
+    return multiThreadList.sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [multiThreadTasks, searchQuery]);
 
   const togglePin = (sessionId: string) => {
     const session = sessions[sessionId];
@@ -167,11 +184,264 @@ export function Sidebar({
       </div>
 
       <div className="flex flex-col gap-2 overflow-y-auto">
-        {sessionList.length === 0 && (
+        {sessionList.length === 0 && filteredMultiThreadTasks.length === 0 && (
           <div className="rounded-xl border border-ink-900/5 bg-surface px-4 py-5 text-center text-xs text-muted">
             No sessions yet. Start by sending a prompt.
           </div>
         )}
+        
+        {/* Multi-Thread Tasks - integrated into main list */}
+        {filteredMultiThreadTasks.map((task) => {
+            const threads = task.threadIds.map(id => sessions[id]).filter(Boolean);
+            const runningCount = threads.filter(t => t?.status === "running").length;
+            const completedCount = threads.filter(t => t?.status === "completed").length;
+            const errorCount = threads.filter(t => t?.status === "error").length;
+            const totalCount = threads.length;
+            
+            const isExpanded = expandedTasks.has(task.id);
+            
+            // Calculate total tokens for this task (threads + summary)
+            const threadInputTokens = threads.reduce((sum, t) => sum + (t?.inputTokens || 0), 0);
+            const threadOutputTokens = threads.reduce((sum, t) => sum + (t?.outputTokens || 0), 0);
+            const summaryInputTokens = task.summaryThreadId
+              ? (sessions[task.summaryThreadId]?.inputTokens || 0)
+              : 0;
+            const summaryOutputTokens = task.summaryThreadId
+              ? (sessions[task.summaryThreadId]?.outputTokens || 0)
+              : 0;
+            const totalInputTokens = threadInputTokens + summaryInputTokens;
+            const totalOutputTokens = threadOutputTokens + summaryOutputTokens;
+            const totalTokens = totalInputTokens + totalOutputTokens;
+            
+            const progress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+            const isCreated = task.status === 'created';
+            const isRunning = task.status === 'running' || runningCount > 0;
+            const isCompleted = task.status === 'completed';
+            
+            return (
+              <div
+                key={`mt-${task.id}`}
+                className={`cursor-pointer rounded-xl border transition-all ${
+                  isCompleted
+                    ? "border-success/30 bg-success/5"
+                    : isRunning
+                      ? "border-info/30 bg-info/5"
+                      : isCreated
+                        ? "border-warning/30 bg-warning/5"
+                        : "border-ink-900/10 bg-surface hover:bg-surface-tertiary"
+                }`}
+                onClick={() => setExpandedTasks(prev => {
+                  const newSet = new Set(prev);
+                  if (newSet.has(task.id)) {
+                    newSet.delete(task.id);
+                  } else {
+                    newSet.add(task.id);
+                  }
+                  return newSet;
+                })}
+                onKeyDown={(e) => { 
+                  if (e.key === "Enter" || e.key === " ") { 
+                    e.preventDefault(); 
+                    setExpandedTasks(prev => {
+                      const newSet = new Set(prev);
+                      if (newSet.has(task.id)) {
+                        newSet.delete(task.id);
+                      } else {
+                        newSet.add(task.id);
+                      }
+                      return newSet;
+                    });
+                  } 
+                }}
+                role="button"
+                tabIndex={0}
+              >
+                {/* Main content - always visible */}
+                <div className="px-3 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+                      {/* Status indicator */}
+                      {isCreated && (
+                        <span className="w-2 h-2 rounded-full bg-warning flex-shrink-0" title="Ready to start" />
+                      )}
+                      {isRunning && (
+                        <span className="w-2 h-2 rounded-full bg-info animate-pulse flex-shrink-0" />
+                      )}
+                      {isCompleted && (
+                        <span className="w-2 h-2 rounded-full bg-success flex-shrink-0" />
+                      )}
+                      
+                      {/* Expand/collapse arrow */}
+                      <svg
+                        className={`w-3.5 h-3.5 text-ink-400 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-90' : ''}`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                      
+                      <div className="flex flex-col min-w-0 flex-1 overflow-hidden">
+                        <div className="flex items-center gap-1.5">
+                          <div className={`text-sm font-medium truncate ${
+                            isCompleted ? "text-success" : isRunning ? "text-info" : isCreated ? "text-warning" : "text-ink-800"
+                          }`}>
+                            {task.title}
+                          </div>
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-accent/10 text-accent whitespace-nowrap">
+                            {task.mode === 'consensus' ? 'Consensus' : 'Multi'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between mt-0.5 text-xs text-muted">
+                          <span className="truncate">
+                            {isCreated
+                              ? `${totalCount} threads ready`
+                              : `${completedCount}/${totalCount} threads done`
+                            }
+                          </span>
+                          {totalTokens > 0 && (
+                            <span className="text-[10px] text-muted bg-ink-100 px-1.5 py-0.5 rounded-full whitespace-nowrap ml-2">
+                              {totalTokens.toLocaleString()} tokens
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-1">
+                      {/* Action buttons */}
+                      {isCreated && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            sendEvent({ type: 'task.start', payload: { taskId: task.id } });
+                          }}
+                          className="text-xs font-medium px-2 py-1 bg-warning text-white rounded hover:bg-warning/80 transition-colors flex-shrink-0"
+                          title="Start all threads"
+                        >
+                          ▶
+                        </button>
+                      )}
+                      
+                      {isRunning && (
+                        <span className="text-xs text-info font-medium flex-shrink-0">
+                          {runningCount} running...
+                        </span>
+                      )}
+                      
+                      {isCompleted && (
+                        <span className="text-xs text-success font-medium flex-shrink-0">
+                          ✓ Complete
+                        </span>
+                      )}
+                      
+                      {errorCount > 0 && (
+                        <span className="text-xs text-error font-medium flex-shrink-0">
+                          {errorCount} errors
+                        </span>
+                      )}
+                      
+                      {/* Delete button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteMultiThreadTask(task.id);
+                        }}
+                        className="flex-shrink-0 rounded-full p-1.5 text-ink-400 hover:text-error hover:bg-ink-900/5"
+                        aria-label="Delete multi-thread task"
+                      >
+                        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M4 7h16" /><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /><path d="M7 7l1 12a1 1 0 0 0 1 .9h6a1 1 0 0 0 1-.9l1-12" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {/* Progress bar - hide when created */}
+                  {!isCreated && (
+                    <div className="mt-2 h-1.5 bg-ink-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          isCompleted
+                            ? 'bg-success'
+                            : isRunning
+                              ? 'bg-info'
+                              : 'bg-ink-300'
+                        }`}
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+                
+                {/* Expanded content - threads */}
+                {isExpanded && (
+                  <div className="border-t border-ink-200 bg-surface/50">
+                    <div className="px-3 py-2">
+                      {/* Badges */}
+                      <div className="flex items-center gap-1 mb-2">
+                        {task.shareWebCache && (
+                          <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-ink-100 text-ink-600">
+                            Shared Cache
+                          </span>
+                        )}
+                        {task.autoSummary && (
+                          <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-purple-100 text-purple-600">
+                            Auto-Summary
+                          </span>
+                        )}
+                      </div>
+                      
+                      {/* Threads list */}
+                      <div className="space-y-1">
+                        {threads.map((thread) => {
+                          const isSummaryThread = thread.id === task.summaryThreadId;
+                          return (
+                            <button
+                              key={thread.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveSessionId(thread.id);
+                              }}
+                              className={`w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-ink-50 transition-colors text-left ${
+                                isSummaryThread ? 'bg-purple-50 border border-purple-200' : ''
+                              }`}
+                            >
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                                  thread.status === 'running'
+                                    ? 'bg-info animate-pulse'
+                                    : thread.status === 'completed'
+                                      ? 'bg-success'
+                                      : thread.status === 'error'
+                                        ? 'bg-error'
+                                        : 'bg-ink-300'
+                                }`}
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1">
+                                  <span className={`text-xs truncate ${isSummaryThread ? 'text-purple-700 font-medium' : 'text-ink-600'}`}>
+                                    {isSummaryThread ? '📋 Summary' : thread.model || 'Unknown'}
+                                  </span>
+                                </div>
+                              </div>
+                              {(thread.inputTokens !== undefined || thread.outputTokens !== undefined) && (
+                                <span className="text-[10px] text-muted bg-ink-100 px-1 py-0.5 rounded">
+                                  {((thread.inputTokens || 0) + (thread.outputTokens || 0)).toLocaleString()}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        
+        {/* Regular Sessions */}
         {sessionList.map((session) => (
           <div
             key={session.id}

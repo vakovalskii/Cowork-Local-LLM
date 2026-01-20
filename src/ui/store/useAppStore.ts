@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ServerEvent, SessionStatus, StreamMessage, TodoItem, FileChange, MultiThreadTask } from "../types";
+import type { ServerEvent, SessionStatus, StreamMessage, TodoItem, FileChange, MultiThreadTask, LLMModel, LLMProvider, LLMProviderSettings } from "../types";
 
 export type PermissionRequest = {
   toolUseId: string;
@@ -41,6 +41,9 @@ interface AppState {
   selectedModel: string | null;
   availableModels: Array<{ id: string; name: string; description?: string }>;
   multiThreadTasks: Record<string, MultiThreadTask>;
+  llmProviders: LLMProvider[];
+  llmModels: LLMModel[];
+  llmProviderSettings: LLMProviderSettings | null;
 
   setPrompt: (prompt: string) => void;
   setCwd: (cwd: string) => void;
@@ -56,6 +59,9 @@ interface AppState {
   setSelectedModel: (model: string | null) => void;
   setAvailableModels: (models: Array<{ id: string; name: string; description?: string }>) => void;
   deleteMultiThreadTask: (taskId: string) => void;
+  setLLMProviders: (providers: LLMProvider[]) => void;
+  setLLMModels: (models: LLMModel[]) => void;
+  setLLMProviderSettings: (settings: LLMProviderSettings) => void;
 }
 
 function createSession(id: string): SessionView {
@@ -76,6 +82,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedModel: null,
   availableModels: [],
   multiThreadTasks: {},
+  llmProviders: [],
+  llmModels: [],
+  llmProviderSettings: null,
 
   setPrompt: (prompt) => set({ prompt }),
   setCwd: (cwd) => set({ cwd }),
@@ -86,6 +95,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   setAutoScrollEnabled: (autoScrollEnabled) => set({ autoScrollEnabled }),
   setSelectedModel: (selectedModel) => set({ selectedModel }),
   setAvailableModels: (availableModels) => set({ availableModels }),
+  setLLMProviders: (llmProviders) => set({ llmProviders }),
+  setLLMModels: (llmModels) => set({ llmModels }),
+  setLLMProviderSettings: (llmProviderSettings) => set({ llmProviderSettings }),
   deleteMultiThreadTask: (taskId) => {
     set((state) => {
       const nextTasks = { ...state.multiThreadTasks };
@@ -452,6 +464,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         break;
       }
 
+      case "task.error": {
+        const { message } = event.payload;
+        set({ globalError: message });
+        break;
+      }
+
       case "task.deleted": {
         const { taskId } = event.payload;
         set((state) => {
@@ -459,6 +477,46 @@ export const useAppStore = create<AppState>((set, get) => ({
           delete nextTasks[taskId];
           return { multiThreadTasks: nextTasks };
         });
+        break;
+      }
+
+      case "llm.providers.loaded": {
+        const { settings } = event.payload;
+        set({ 
+          llmProviders: settings.providers, 
+          llmModels: settings.models,
+          llmProviderSettings: settings
+        });
+        console.log('[AppStore] LLM providers loaded:', settings);
+        break;
+      }
+
+      case "llm.providers.saved": {
+        const { settings } = event.payload;
+        set({ 
+          llmProviders: settings.providers, 
+          llmModels: settings.models,
+          llmProviderSettings: settings
+        });
+        console.log('[AppStore] LLM providers saved:', settings);
+        break;
+      }
+
+      case "llm.models.fetched": {
+        const { models } = event.payload;
+        console.log('[AppStore] LLM models fetched:', models);
+        break;
+      }
+
+      case "llm.models.error": {
+        const { message } = event.payload;
+        console.error('[AppStore] LLM models error:', message);
+        break;
+      }
+
+      case "llm.models.checked": {
+        const { unavailableModels } = event.payload;
+        console.log('[AppStore] LLM models checked, unavailable:', unavailableModels);
         break;
       }
     }
