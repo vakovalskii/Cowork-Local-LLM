@@ -78,10 +78,15 @@ function getSandboxPackages(cwd: string): string[] {
   }
 }
 
+type PromptSettings = {
+  enableZaiReader?: boolean;
+  enableMemory?: boolean;
+};
+
 /**
  * Load system prompt from template file and replace placeholders
  */
-export function getSystemPrompt(cwd: string): string {
+export function getSystemPrompt(cwd: string, settings?: PromptSettings | null): string {
   const promptPath = join(__dirname, 'prompts', 'system.txt');
   let template = readFileSync(promptPath, 'utf-8');
 
@@ -95,6 +100,14 @@ export function getSystemPrompt(cwd: string): string {
     sandboxPackagesInfo = `\n\n**Installed Sandbox Packages:**\nThe following npm packages are already installed and available via require():\n${installedPackages.map(pkg => `- ${pkg}`).join('\n')}`;
   }
 
+  // Build optional tools lines
+  const readPageLine = settings?.enableZaiReader 
+    ? '- `read_page` - Read web page (Z.AI Reader)' 
+    : '';
+  const memoryLine = settings?.enableMemory
+    ? '- `manage_memory` - Store/read long-term memory'
+    : '';
+
   // Replace placeholders
   template = template
     .replace(/{osName}/g, osName)
@@ -107,7 +120,9 @@ export function getSystemPrompt(cwd: string): string {
     .replace(/{currentDirCmd}/g, cmds.currentDir)
     .replace(/{findFilesCmd}/g, cmds.findFiles)
     .replace(/{searchTextCmd}/g, cmds.searchText)
-    .replace(/{sandboxPackages}/g, sandboxPackagesInfo);
+    .replace(/{sandboxPackages}/g, sandboxPackagesInfo)
+    .replace(/{read_page_line}/g, readPageLine)
+    .replace(/{memory_line}/g, memoryLine);
 
   return template;
 }

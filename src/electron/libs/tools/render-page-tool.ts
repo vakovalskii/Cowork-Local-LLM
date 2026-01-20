@@ -115,8 +115,9 @@ function getTelegramExtractScript(targetPostId: string | null, maxPosts: number)
   const maxPosts = ${maxPosts};
   const posts = [];
   
-  // Find all message bubbles
-  const messageBubbles = document.querySelectorAll('.tgme_widget_message_wrap');
+  // Find all message bubbles and convert to array for reverse iteration
+  // Telegram shows old posts at top, new posts at bottom - we want newest first
+  const messageBubbles = Array.from(document.querySelectorAll('.tgme_widget_message_wrap')).reverse();
   
   for (const wrap of messageBubbles) {
     // Early exit if we have enough posts
