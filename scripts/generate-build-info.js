@@ -1,5 +1,5 @@
 import { execSync } from 'child_process';
-import { writeFileSync } from 'fs';
+import { writeFileSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -17,10 +17,9 @@ function getBuildInfo() {
     console.warn('Warning: Could not get git commit info:', error.message);
   }
 
-  // Read version from package.json
-  const packageJson = JSON.parse(
-    execSync('cat package.json', { encoding: 'utf-8' })
-  );
+  // Read version from package.json (cross-platform)
+  const packageJsonPath = join(__dirname, '..', 'package.json');
+  const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
 
   return {
     version: packageJson.version,
