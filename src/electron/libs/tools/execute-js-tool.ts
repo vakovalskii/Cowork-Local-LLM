@@ -61,11 +61,11 @@ export async function executeJSTool(
 ): Promise<ToolResult> {
   const timeout = Math.min(args.timeout || 5000, 30000);
   
-  console.log('[ExecuteJS] Starting execution');
-  console.log('[ExecuteJS] Timeout:', timeout);
-  console.log('[ExecuteJS] Context CWD:', context.cwd);
-  console.log('[ExecuteJS] Code length:', args.code.length);
-  
+    console.log('[ExecuteJS] Starting execution');
+    console.log('[ExecuteJS] Timeout:', timeout);
+    console.log('[ExecuteJS] Context CWD:', context.cwd);
+    console.log('[ExecuteJS] Code length:', args.code.length);
+    
   try {
     const result = await executeInQuickJS(
       args.code,
@@ -76,15 +76,15 @@ export async function executeJSTool(
     
     if (result.success) {
       let output = '✅ Code executed successfully (QuickJS WASM Sandbox)\n\n';
-      
+    
       if (result.logs.length > 0) {
         output += '**Console Output:**\n```\n' + result.logs.join('\n') + '\n```\n\n';
-      }
-      
+    }
+    
       if (result.output) {
         output += '**Result:**\n```json\n' + result.output + '\n```';
-      }
-      
+    }
+    
       return { success: true, output };
     } else {
       // Properly stringify error (may be object or string)
@@ -94,10 +94,10 @@ export async function executeJSTool(
         : (err?.message || JSON.stringify(err, null, 2));
       
       let errorMsg = `❌ Execution failed: ${errorText}\n\n`;
-      
+    
       // Show truncated code for debugging
       errorMsg += `**Your code:**\n\`\`\`javascript\n${args.code.substring(0, 500)}${args.code.length > 500 ? '\n// ... truncated ...' : ''}\n\`\`\`\n\n`;
-      
+    
       // Add helpful hints based on error
       if (errorText?.includes('not defined') || errorText?.includes('is not a function')) {
         errorMsg += `💡 **Available APIs:**\n`;

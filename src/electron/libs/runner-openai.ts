@@ -499,7 +499,7 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
             }
           });
         }
-
+        
         // Check if aborted during stream
         if (aborted) {
           console.log('[OpenAI Runner] Session aborted during streaming');
@@ -955,17 +955,17 @@ DO NOT call the same tool again with similar arguments.`
       // Send error message to chat
       sendMessage('text', { text: `\n\n❌ **Error:** ${errorMessage}\n\nPlease check your API settings (Base URL, Model Name, API Key) and try again.` });
       saveToDb('text', { text: `\n\n❌ **Error:** ${errorMessage}\n\nPlease check your API settings (Base URL, Model Name, API Key) and try again.` });
-
+      
       if (onSessionUpdate) {
         onSessionUpdate({ inputTokens: totalInputTokens, outputTokens: totalOutputTokens });
       }
       onEvent({
         type: "session.status",
-        payload: {
-          sessionId: session.id,
-          status: "idle",
-          title: session.title,
-          error: errorMessage
+        payload: { 
+          sessionId: session.id, 
+          status: "idle", 
+          title: session.title, 
+          error: errorMessage 
         }
       });
     }
