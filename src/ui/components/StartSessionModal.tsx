@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { ApiSettings } from "../types";
+import { ModelSelector } from "./ModelSelector";
 
 interface StartSessionModalProps {
   cwd: string;
@@ -47,8 +47,6 @@ export function StartSessionModal({
     if (result) onCwdChange(result);
   };
 
-  const displayModel = selectedModel || apiSettings?.model || "Select model...";
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/20 px-4 py-8 backdrop-blur-sm">
       <div className="w-full max-w-lg rounded-2xl border border-ink-900/5 bg-surface p-6 shadow-elevated">
@@ -66,34 +64,13 @@ export function StartSessionModal({
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-muted">Model</span>
             </div>
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger className="w-full rounded-xl border border-ink-900/10 bg-surface-secondary px-4 py-2.5 text-sm text-ink-800 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/20 transition-colors text-left flex items-center justify-between">
-                <span className="truncate">{displayModel}</span>
-                <svg className="w-4 h-4 text-muted shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Portal>
-                <DropdownMenu.Content className="z-50 min-w-[300px] max-w-[400px] rounded-xl border border-ink-900/10 bg-white p-1 shadow-lg max-h-60 overflow-y-auto" sideOffset={8}>
-                  {availableModels.length === 0 ? (
-                    <div className="px-3 py-2 text-sm text-muted">No models available. Check your API settings.</div>
-                  ) : (
-                    availableModels.map((model) => (
-                      <DropdownMenu.Item
-                        key={model.id}
-                        className="flex flex-col cursor-pointer rounded-lg px-3 py-2 text-sm text-ink-700 outline-none hover:bg-ink-900/5"
-                        onSelect={() => onModelChange(model.id)}
-                      >
-                        <span className="font-medium truncate">{model.name}</span>
-                        {model.description && (
-                          <span className="text-xs text-muted truncate">{model.description}</span>
-                        )}
-                      </DropdownMenu.Item>
-                    ))
-                  )}
-                </DropdownMenu.Content>
-              </DropdownMenu.Portal>
-            </DropdownMenu.Root>
+            <ModelSelector
+              selectedModel={selectedModel}
+              onModelChange={onModelChange}
+              availableModels={availableModels}
+              apiSettings={apiSettings}
+              placeholder="Select model..."
+            />
           </label>
           <label className="grid gap-1.5">
             <div className="flex items-center justify-between">

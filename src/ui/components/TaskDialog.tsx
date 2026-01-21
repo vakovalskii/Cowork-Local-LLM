@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { ApiSettings, CreateTaskPayload, TaskMode, ThreadTask, ModelInfo, LLMModel } from "../types";
+import { ModelSelector } from "./ModelSelector";
 
 // Helper function to generate task title automatically (max 3 words)
 function generateTaskTitle(
@@ -79,7 +79,7 @@ export function TaskDialog({
   // Combine available models from API and LLM providers
   const allAvailableModels = (() => {
     const models: ModelInfo[] = [];
-    
+
     // Add legacy API models
     availableModels.forEach(model => {
       models.push({
@@ -88,7 +88,7 @@ export function TaskDialog({
         description: model.description
       });
     });
-    
+
     // Add LLM provider models (only enabled ones)
     llmModels.filter(m => m.enabled).forEach(model => {
       models.push({
@@ -97,7 +97,7 @@ export function TaskDialog({
         description: `${model.providerType} | ${model.description || ''}`
       });
     });
-    
+
     return models;
   })();
 
@@ -125,7 +125,7 @@ export function TaskDialog({
 
   const handleCreateTask = () => {
     const title = generateTaskTitle(mode, tasks, consensusPrompt, consensusModel, consensusQuantity);
-    
+
     const payload: CreateTaskPayload = {
       mode,
       title,
@@ -149,8 +149,6 @@ export function TaskDialog({
   const isValid = mode === "consensus"
     ? consensusPrompt.trim() !== ""
     : tasks.some(t => t.model && t.prompt.trim() !== "");
-
-  const displayConsensusModel = consensusModel || apiSettings?.model || "Select model...";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/20 px-4 py-8 backdrop-blur-sm">
@@ -255,34 +253,13 @@ export function TaskDialog({
               {/* Model */}
               <label className="grid gap-1.5">
                 <span className="text-xs font-medium text-muted">Model for All Threads</span>
-                <DropdownMenu.Root>
-                  <DropdownMenu.Trigger className="w-full rounded-xl border border-ink-900/10 bg-surface-secondary px-4 py-2.5 text-sm text-ink-800 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/20 transition-colors text-left flex items-center justify-between">
-                    <span className="truncate">{displayConsensusModel}</span>
-                    <svg className="w-4 h-4 text-muted shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </DropdownMenu.Trigger>
-                  <DropdownMenu.Portal>
-                    <DropdownMenu.Content className="z-50 min-w-[300px] max-w-[400px] rounded-xl border border-ink-900/10 bg-white p-1 shadow-lg max-h-60 overflow-y-auto" sideOffset={8}>
-                      {allAvailableModels.length === 0 ? (
-                        <div className="px-3 py-2 text-sm text-muted">No models available. Check your API settings.</div>
-                      ) : (
-                        allAvailableModels.map((model) => (
-                          <DropdownMenu.Item
-                            key={model.id}
-                            className="flex flex-col cursor-pointer rounded-lg px-3 py-2 text-sm text-ink-700 outline-none hover:bg-ink-900/5"
-                            onSelect={() => setConsensusModel(model.id)}
-                          >
-                            <span className="font-medium truncate">{model.name}</span>
-                            {model.description && (
-                              <span className="text-xs text-muted truncate">{model.description}</span>
-                            )}
-                          </DropdownMenu.Item>
-                        ))
-                      )}
-                    </DropdownMenu.Content>
-                  </DropdownMenu.Portal>
-                </DropdownMenu.Root>
+                <ModelSelector
+                  selectedModel={consensusModel}
+                  onModelChange={(model) => setConsensusModel(model || "")}
+                  availableModels={allAvailableModels}
+                  apiSettings={apiSettings}
+                  placeholder="Select model..."
+                />
               </label>
 
               {/* Quantity */}
@@ -345,34 +322,14 @@ export function TaskDialog({
                   {/* Model */}
                   <label className="grid gap-1.5">
                     <span className="text-xs font-medium text-muted">Model</span>
-                    <DropdownMenu.Root>
-                      <DropdownMenu.Trigger className="w-full rounded-xl border border-ink-900/10 bg-surface-tertiary px-3 py-2 text-sm text-ink-800 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/20 transition-colors text-left flex items-center justify-between">
-                        <span className="truncate">{task.model || "Select model..."}</span>
-                        <svg className="w-4 h-4 text-muted shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </DropdownMenu.Trigger>
-                      <DropdownMenu.Portal>
-                        <DropdownMenu.Content className="z-50 min-w-[300px] max-w-[400px] rounded-xl border border-ink-900/10 bg-white p-1 shadow-lg max-h-60 overflow-y-auto" sideOffset={8}>
-                          {allAvailableModels.length === 0 ? (
-                            <div className="px-3 py-2 text-sm text-muted">No models available. Check your API settings.</div>
-                          ) : (
-                            allAvailableModels.map((model) => (
-                              <DropdownMenu.Item
-                                key={model.id}
-                                className="flex flex-col cursor-pointer rounded-lg px-3 py-2 text-sm text-ink-700 outline-none hover:bg-ink-900/5"
-                                onSelect={() => handleTaskModelChange(index, model.id)}
-                              >
-                                <span className="font-medium truncate">{model.name}</span>
-                                {model.description && (
-                                  <span className="text-xs text-muted truncate">{model.description}</span>
-                                )}
-                              </DropdownMenu.Item>
-                            ))
-                          )}
-                        </DropdownMenu.Content>
-                      </DropdownMenu.Portal>
-                    </DropdownMenu.Root>
+                    <ModelSelector
+                      selectedModel={task.model}
+                      onModelChange={(model) => handleTaskModelChange(index, model || "")}
+                      availableModels={allAvailableModels}
+                      apiSettings={apiSettings}
+                      placeholder="Select model..."
+                      className="bg-surface-tertiary px-3 py-2"
+                    />
                   </label>
 
                   {/* Prompt */}
