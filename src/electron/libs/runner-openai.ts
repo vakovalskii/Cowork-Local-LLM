@@ -8,6 +8,7 @@ import OpenAI from 'openai';
 import type { ServerEvent } from "../types.js";
 import type { Session } from "./session-store.js";
 import { loadApiSettings } from "./settings-store.js";
+import { loadLLMProviderSettings } from "./llm-providers-store.js";
 import { TOOLS, getTools } from "./tools-definitions.js";
 import { getInitialPrompt, getSystemPrompt } from "./prompt-loader.js";
 import { getTodosSummary, getTodos, setTodos, clearTodos } from "./tools/manage-todos-tool.js";
@@ -115,24 +116,70 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
   // Start the query in the background
   (async () => {
     try {
-      // Load settings
+      // Determine if model is from LLM provider (contains ::)
+      const isLLMProviderModel = session.model?.includes('::');
+      
+      let apiKey: string;
+      let baseURL: string;
+      let modelName: string;
+      let temperature: number | undefined;
+      let providerInfo = '';
+      
+      if (isLLMProviderModel && session.model) {
+        // Extract provider ID and model ID
+        const [providerId, modelId] = session.model.split('::');
+        
+        // Load LLM provider settings
+        const llmSettings = loadLLMProviderSettings();
+        
+        if (!llmSettings) {
+          throw new Error('LLM Provider settings not found. Please configure providers in Settings (⚙️).');
+        }
+        
+        // Find the provider
+        const provider = llmSettings.providers.find(p => p.id === providerId);
+        
+        if (!provider) {
+          throw new Error(`Provider ${providerId} not found. Please check your LLM provider settings.`);
+        }
+        
+        // Set up API configuration from provider
+        apiKey = provider.apiKey;
+        
+        // Determine base URL based on provider type
+        if (provider.type === 'openrouter') {
+          baseURL = 'https://openrouter.ai/api/v1';
+        } else if (provider.type === 'zai') {
+          const prefix = provider.zaiApiPrefix === 'coding' ? 'api/coding/paas' : 'api/paas';
+          baseURL = `https://api.z.ai/${prefix}/v4`;
+        } else {
+          baseURL = provider.baseUrl || '';
+        }
+        
+        modelName = modelId;
+        temperature = session.temperature; // undefined means don't send
+        providerInfo = `${provider.name} (${provider.type})`;
+      } else {
+        // Use legacy API settings
+        const guiSettings = loadApiSettings();
+        
+        if (!guiSettings || !guiSettings.baseUrl || !guiSettings.model) {
+          throw new Error('API settings not configured. Please set API Key, Base URL and Model in Settings (⚙️).');
+        }
+        
+        if (!guiSettings.apiKey) {
+          throw new Error('API Key is missing. Please configure it in Settings (⚙️).');
+        }
+
+        apiKey = guiSettings.apiKey;
+        baseURL = guiSettings.baseUrl;
+        modelName = guiSettings.model;
+        temperature = session.temperature; // undefined means don't send
+        providerInfo = 'Legacy API';
+      }
+      
+      // Load legacy settings for other configuration (tools, permissions, etc)
       const guiSettings = loadApiSettings();
-      
-      if (!guiSettings || !guiSettings.baseUrl || !guiSettings.model) {
-        throw new Error('API settings not configured. Please set API Key, Base URL and Model in Settings (⚙️).');
-      }
-      
-      if (!guiSettings.apiKey) {
-        throw new Error('API Key is missing. Please configure it in Settings (⚙️).');
-      }
-
-      // Ensure baseURL ends with /v1 for OpenAI compatibility
-      let baseURL = guiSettings.baseUrl;
-
-
-      console.log(`[OpenAI Runner] Starting with model: ${guiSettings.model}`);
-      console.log(`[OpenAI Runner] Base URL: ${baseURL}`);
-      console.log(`[OpenAI Runner] Temperature: ${guiSettings.temperature || 0.3}`);
 
       // Custom fetch to capture error response bodies
       const originalFetch = global.fetch;
@@ -158,7 +205,7 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
       // Initialize OpenAI client with custom fetch and timeout
       const REQUEST_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes for long operations
       const client = new OpenAI({
-        apiKey: guiSettings.apiKey || 'dummy-key',
+        apiKey: apiKey || 'dummy-key',
         baseURL: baseURL,
         dangerouslyAllowBrowser: false,
         fetch: customFetch as any,
@@ -332,14 +379,33 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
       // Track total usage across all iterations
       const sessionStartTime = Date.now();
 
-      // Log request
-      const activeTools = getTools(guiSettings);
+      // Get initial tools (will be refreshed each iteration)
+      let activeTools = getTools(guiSettings);
+      let currentGuiSettings = guiSettings;
       
+      // Get system prompt
+      const systemPrompt = messages[0]?.content 
+        ? (typeof messages[0].content === 'string' ? messages[0].content : '[complex content]')
+        : '[no system prompt]';
+      
+      console.log(`\n[OpenAI Runner] ══════════════════════════════════════`);
+      console.log(`[OpenAI Runner] Session: ${session.id}`);
+      console.log(`[OpenAI Runner] Provider: ${providerInfo}`);
+      console.log(`[OpenAI Runner] Model: ${modelName}`);
+      console.log(`[OpenAI Runner] Temperature: ${temperature !== undefined ? temperature : '(not sent)'}`)
+      console.log(`[OpenAI Runner] Base URL: ${baseURL}`);
+      console.log(`[OpenAI Runner] Tools: ${activeTools.length} (${activeTools.map(t => t.function.name).join(', ')})`);
+      console.log(`[OpenAI Runner] ══════════════════════════════════════`);
+      console.log(`[OpenAI Runner] System Prompt (raw JSON):`);
+      console.log(JSON.stringify({ role: 'system', content: systemPrompt }, null, 2));
+      console.log(`[OpenAI Runner] ══════════════════════════════════════\n`);
+      
+      // Log to file
       logApiRequest(session.id, {
-        model: guiSettings.model,
+        model: modelName,
         messages,
         tools: activeTools,
-        temperature: guiSettings.temperature || 0.3
+        temperature: temperature
       });
 
       // Send system init message
@@ -348,9 +414,9 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
         cwd: session.cwd || 'No workspace folder',
         session_id: session.id,
         tools: activeTools.map(t => t.function.name),
-        model: session.model || guiSettings.model,
-        permissionMode: guiSettings.permissionMode || 'ask',
-        memoryEnabled: guiSettings.enableMemory || false
+        model: modelName,
+        permissionMode: currentGuiSettings?.permissionMode || 'ask',
+        memoryEnabled: currentGuiSettings?.enableMemory || false
       });
 
       // Update session with ID for resume support
@@ -372,35 +438,35 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
 
       while (!aborted && iterationCount < MAX_ITERATIONS) {
         iterationCount++;
-        console.log(`[OpenAI Runner] Iteration ${iterationCount}`);
-        console.log(`[OpenAI Runner] Messages count: ${messages.length}`);
-        console.log(`[OpenAI Runner] All messages:`, JSON.stringify(messages, null, 2));
+        
+        // Reload settings to pick up any changes (e.g. Tavily API key, memory enabled)
+        const freshSettings = loadApiSettings();
+        if (freshSettings) {
+          const newTools = getTools(freshSettings);
+          const oldToolNames = activeTools.map(t => t.function.name).sort().join(',');
+          const newToolNames = newTools.map(t => t.function.name).sort().join(',');
+          
+          if (oldToolNames !== newToolNames) {
+            console.log(`[OpenAI Runner] Tools updated: ${activeTools.length} → ${newTools.length}`);
+            activeTools = newTools;
+            currentGuiSettings = freshSettings;
+            // Update tool executor with new settings
+            toolExecutor.updateSettings(freshSettings);
+          }
+        }
+        
+        console.log(`\n[OpenAI Runner] ▶ Iteration ${iterationCount} | Messages: ${messages.length} | Tools: ${activeTools.length}`);
 
-        // Prepare request payload for logging
-        const requestPayload = {
-          model: session.model || guiSettings.model,
-          messages: messages,
-          tools: activeTools,
-          temperature: guiSettings.temperature || 0.3,
-          stream: true,
-          parallel_tool_calls: true,  // Enable parallel tool calls
-          stream_options: { include_usage: true }  // Include token usage in stream
-        };
-
-        // Log full request
-        console.log('[OpenAI Runner] ===== RAW REQUEST =====');
-        console.log(JSON.stringify(requestPayload, null, 2));
-        console.log('[OpenAI Runner] ===== END REQUEST =====');
-
-        // Call OpenAI API (with explicit typing)
+        // Call OpenAI API - build params conditionally
         const stream = await client.chat.completions.create({
-          model: session.model || guiSettings.model,
+          model: modelName,
           messages: messages as any[],
           tools: activeTools as any[],
-          temperature: guiSettings.temperature || 0.3,
           stream: true,
           parallel_tool_calls: true,
-          stream_options: { include_usage: true }
+          stream_options: { include_usage: true },
+          // Only include temperature if specified (some models like GPT-5 don't support it)
+          ...(temperature !== undefined ? { temperature } : {})
         });
 
         let assistantMessage = '';
@@ -517,18 +583,30 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
           return;
         }
         
-        // OPTIMIZATION: Lightweight logging (no JSON.stringify on large objects)
-        console.log(`[OpenAI Runner] Stream complete: ${assistantMessage.length} chars, ${toolCalls.length} tools, finish: ${streamMetadata.finishReason}`);
-        
         // Accumulate token usage
         if (streamMetadata.usage) {
           totalInputTokens += streamMetadata.usage.prompt_tokens || 0;
           totalOutputTokens += streamMetadata.usage.completion_tokens || 0;
         }
         
+        // Raw JSON response log
+        console.log(`[OpenAI Runner] ──────────────────────────────────────`);
+        console.log(`[OpenAI Runner] Response (raw JSON):`);
+        console.log(JSON.stringify({
+          id: streamMetadata.id,
+          model: streamMetadata.model,
+          finish_reason: streamMetadata.finishReason,
+          usage: streamMetadata.usage,
+          message: {
+            role: 'assistant',
+            content: assistantMessage || null,
+            tool_calls: toolCalls.length > 0 ? toolCalls : undefined
+          }
+        }, null, 2));
+        console.log(`[OpenAI Runner] ──────────────────────────────────────`);
+        
         // If no tool calls, we're done
         if (toolCalls.length === 0) {
-          console.log(`[OpenAI Runner] Final assistant response (no tools):`, assistantMessage);
           
           // Send assistant message for UI display
           sendMessage('assistant', {

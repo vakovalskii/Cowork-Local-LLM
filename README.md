@@ -47,7 +47,44 @@ https://github.com/user-attachments/assets/a8c54ce0-2fe0-40c3-8018-026cab9d7483
 
 ## 🚀 Quick Start
 
-### Installation (npm)
+### Installation (Windows)
+
+```powershell
+# Clone the repository
+git clone https://github.com/vakovalskii/LocalDesk.git
+cd LocalDesk
+
+# Install dependencies
+npm install
+
+# Run in development mode (single terminal)
+npm run dev:win
+```
+
+> **Notes:**
+> - First run may take 10-15 seconds while dependencies compile. Subsequent runs will be faster.
+> - **To stop:** Press `Ctrl+C` twice to fully terminate both processes (first Ctrl+C sends graceful shutdown, second forces termination).
+
+**Alternative: Manual mode (2 terminals)**
+
+Terminal 1 - Start Vite dev server:
+```powershell
+npm run dev:react
+```
+
+Terminal 2 - Start Electron (wait 5-10 seconds):
+```powershell
+npm run transpile:electron
+cross-env NODE_ENV=development npx electron .
+```
+
+**Production mode:**
+```powershell
+npm run build
+npx electron .
+```
+
+### Installation (macOS/Linux - npm)
 
 ```bash
 # Clone the repository
@@ -64,7 +101,7 @@ npx electron-rebuild -f -w better-sqlite3
 npm run dev
 ```
 
-### Installation (bun) ⚡
+### Installation (macOS/Linux - bun) ⚡
 
 ```bash
 # Clone the repository
@@ -217,14 +254,26 @@ src/
 
 ## 📦 Building
 
-```bash
-# macOS (DMG)
-npm run dist:mac
-
-# Windows (EXE)
+### Windows
+```powershell
+# Build executable and installer
 npm run dist:win
 
-# Linux (AppImage)
+# Output: dist/LocalDesk Setup 0.0.6.exe
+```
+
+### macOS
+```bash
+# Build DMG (ARM64)
+npm run dist:mac-arm64
+
+# Build DMG (Intel x64)
+npm run dist:mac-x64
+```
+
+### Linux
+```bash
+# Build AppImage
 npm run dist:linux
 ```
 
