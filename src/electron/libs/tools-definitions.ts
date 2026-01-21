@@ -56,7 +56,7 @@ export function getTools(settings: ApiSettings | null) {
   
   // Filter out web search tools only if explicitly disabled
   // WebSearchTool supports DuckDuckGo fallback without API keys.
-  const tavilyEnabled = settings?.enableTavilySearch !== false;
+  const tavilyEnabled = settings?.enableTavilySearch || false;
   const zaiEnabled = !!settings?.zaiApiKey;
   const hasWebSearch = tavilyEnabled || zaiEnabled;
   

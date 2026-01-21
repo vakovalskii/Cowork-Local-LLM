@@ -28,12 +28,12 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
   const [model, setModel] = useState(currentSettings?.model || "");
   const [temperature, setTemperature] = useState(currentSettings?.temperature?.toString() || "0.3");
   const [tavilyApiKey, setTavilyApiKey] = useState(currentSettings?.tavilyApiKey || "");
-  const [enableTavilySearch, setEnableTavilySearch] = useState(currentSettings?.enableTavilySearch !== false);
+  const [enableTavilySearch, setEnableTavilySearch] = useState(currentSettings?.enableTavilySearch || false);
   const [zaiApiKey, setZaiApiKey] = useState(currentSettings?.zaiApiKey || "");
   const [webSearchProvider, setWebSearchProvider] = useState<WebSearchProvider>(currentSettings?.webSearchProvider || 'tavily');
   const [zaiApiUrl, setZaiApiUrl] = useState<ZaiApiUrl>(currentSettings?.zaiApiUrl || 'default');
   const [permissionMode, setPermissionMode] = useState<'default' | 'ask'>(currentSettings?.permissionMode || 'ask');
-  const [enableMemory, setEnableMemory] = useState(currentSettings?.enableMemory !== false);
+  const [enableMemory, setEnableMemory] = useState(currentSettings?.enableMemory || false);
   const [enableZaiReader, setEnableZaiReader] = useState(currentSettings?.enableZaiReader || false);
   const [zaiReaderApiUrl, setZaiReaderApiUrl] = useState<ZaiReaderApiUrl>(currentSettings?.zaiReaderApiUrl || 'default');
   const [memoryContent, setMemoryContent] = useState("");
@@ -89,12 +89,12 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       setModel(currentSettings.model || "");
       setTemperature(currentSettings.temperature?.toString() || "0.3");
       setTavilyApiKey(currentSettings.tavilyApiKey || "");
-      setEnableTavilySearch(currentSettings.enableTavilySearch !== false);
+      setEnableTavilySearch(currentSettings.enableTavilySearch || false);
       setZaiApiKey(currentSettings.zaiApiKey || "");
       setWebSearchProvider(currentSettings.webSearchProvider || 'tavily');
       setZaiApiUrl(currentSettings.zaiApiUrl || 'default');
       setPermissionMode(currentSettings.permissionMode || 'ask');
-      setEnableMemory(currentSettings.enableMemory !== false);
+      setEnableMemory(currentSettings.enableMemory || false);
       setEnableZaiReader(currentSettings.enableZaiReader || false);
       setZaiReaderApiUrl(currentSettings.zaiReaderApiUrl || 'default');
       // New tool group toggles
