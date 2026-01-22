@@ -24,6 +24,46 @@ function ensureCacheDir(): void {
   }
 }
 
+// Cache for parsed marketplace URLs
+const marketplaceUrlCache = new Map<string, { repo: string; branch: string }>();
+
+/**
+ * Parse marketplace URL to extract repo and branch
+ * Example: https://api.github.com/repos/vakovalskii/LocalDesk-Skills/contents/skills?ref=feature/rlm-pdf-reader
+ * Returns: { repo: "vakovalskii/LocalDesk-Skills", branch: "feature/rlm-pdf-reader" }
+ */
+function parseMarketplaceUrl(url: string): { repo: string; branch: string } {
+  // Check cache first
+  if (marketplaceUrlCache.has(url)) {
+    return marketplaceUrlCache.get(url)!;
+  }
+  
+  try {
+    // Extract repo from URL pattern: /repos/{owner}/{repo}/contents
+    const repoMatch = url.match(/\/repos\/([^\/]+\/[^\/]+)\/contents/);
+    if (!repoMatch) {
+      throw new Error("Invalid marketplace URL format");
+    }
+    const repo = repoMatch[1];
+    
+    // Extract branch from ref parameter, default to "main"
+    const urlObj = new URL(url);
+    const branch = urlObj.searchParams.get("ref") || "main";
+    
+    const result = { repo, branch };
+    // Cache the result
+    marketplaceUrlCache.set(url, result);
+    
+    return result;
+  } catch (error) {
+    console.error("[SkillsLoader] Failed to parse marketplace URL:", error);
+    // Fallback to default
+    const fallback = { repo: "vakovalskii/LocalDesk-Skills", branch: "main" };
+    marketplaceUrlCache.set(url, fallback);
+    return fallback;
+  }
+}
+
 /**
  * Parse SKILL.md frontmatter to extract metadata
  */
@@ -98,6 +138,10 @@ export async function fetchSkillsFromMarketplace(): Promise<Skill[]> {
   
   console.log("[SkillsLoader] Fetching skills from:", marketplaceUrl);
   
+  // Parse repo and branch from marketplace URL
+  const { repo, branch } = parseMarketplaceUrl(marketplaceUrl);
+  console.log(`[SkillsLoader] Using repo: ${repo}, branch: ${branch}`);
+  
   try {
     // Fetch skills directory listing
     const response = await fetch(marketplaceUrl, {
@@ -120,7 +164,7 @@ export async function fetchSkillsFromMarketplace(): Promise<Skill[]> {
     // Fetch SKILL.md for each skill
     for (const dir of skillDirs) {
       try {
-        const skillMdUrl = `https://raw.githubusercontent.com/vakovalskii/LocalDesk-Skills/main/${dir.path}/SKILL.md`;
+        const skillMdUrl = `https://raw.githubusercontent.com/${repo}/${branch}/${dir.path}/SKILL.md`;
         const skillMdResponse = await fetch(skillMdUrl);
         
         if (skillMdResponse.ok) {
@@ -174,10 +218,13 @@ export async function downloadSkill(skillId: string): Promise<string> {
     throw new Error(`Skill not found: ${skillId}`);
   }
   
+  // Parse repo and branch from marketplace URL
+  const { repo, branch } = parseMarketplaceUrl(settings.marketplaceUrl);
+  
   ensureCacheDir();
   const skillCacheDir = path.join(getCacheDir(), skillId);
   
-  console.log(`[SkillsLoader] Downloading skill: ${skillId}`);
+  console.log(`[SkillsLoader] Downloading skill: ${skillId} from ${repo}/${branch}`);
   
   // Create skill cache directory
   if (!fs.existsSync(skillCacheDir)) {
@@ -185,7 +232,7 @@ export async function downloadSkill(skillId: string): Promise<string> {
   }
   
   // Fetch skill directory contents
-  const contentsUrl = `https://api.github.com/repos/vakovalskii/LocalDesk-Skills/contents/${skill.repoPath}`;
+  const contentsUrl = `https://api.github.com/repos/${repo}/contents/${skill.repoPath}?ref=${branch}`;
   const response = await fetch(contentsUrl, {
     headers: {
       "Accept": "application/vnd.github.v3+json",
@@ -200,7 +247,7 @@ export async function downloadSkill(skillId: string): Promise<string> {
   const contents: GitHubContent[] = await response.json();
   
   // Download all files recursively
-  await downloadContents(contents, skillCacheDir, skill.repoPath);
+  await downloadContents(contents, skillCacheDir, skill.repoPath, repo, branch);
   
   return skillCacheDir;
 }
@@ -208,7 +255,9 @@ export async function downloadSkill(skillId: string): Promise<string> {
 async function downloadContents(
   contents: GitHubContent[],
   targetDir: string,
-  basePath: string
+  basePath: string,
+  repo: string,
+  branch: string
 ): Promise<void> {
   for (const item of contents) {
     const localPath = path.join(targetDir, item.name);
@@ -224,7 +273,7 @@ async function downloadContents(
         fs.mkdirSync(localPath, { recursive: true });
       }
       
-      const subContentsUrl = `https://api.github.com/repos/vakovalskii/LocalDesk-Skills/contents/${item.path}`;
+      const subContentsUrl = `https://api.github.com/repos/${repo}/contents/${item.path}?ref=${branch}`;
       const subResponse = await fetch(subContentsUrl, {
         headers: {
           "Accept": "application/vnd.github.v3+json",
@@ -234,7 +283,7 @@ async function downloadContents(
       
       if (subResponse.ok) {
         const subContents: GitHubContent[] = await subResponse.json();
-        await downloadContents(subContents, localPath, item.path);
+        await downloadContents(subContents, localPath, item.path, repo, branch);
       }
     }
   }
