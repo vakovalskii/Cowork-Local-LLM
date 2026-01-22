@@ -4,7 +4,7 @@
 	"version": "0.0.7",
 	"description": "LocalDesk - Desktop AI Assistant with Local Model Support - OpenAI SDK compatible agent with memory system, file operations, web search, and modern UI",
 	"author": "Valerii Kovalskii <v.kovalskii@example.com>",
-	"license": "MIT",
+	"license": "SEE LICENSE IN LICENSE",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/vakovalskii/LocalDesk.git"
