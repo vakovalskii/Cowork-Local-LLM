@@ -8,8 +8,10 @@ import type {
   LLMProvider,
   LLMModel,
   LLMProviderSettings,
-  LLMProviderType
+  LLMProviderType,
+  Skill
 } from "../types";
+import { SkillsTab } from "./SkillsTab";
 
 type SettingsModalProps = {
   onClose: () => void;
@@ -17,7 +19,7 @@ type SettingsModalProps = {
   currentSettings: ApiSettings | null;
 };
 
-type TabId = 'llm-models' | 'web-tools' | 'tools' | 'memory-mode';
+type TabId = 'llm-models' | 'web-tools' | 'tools' | 'skills' | 'memory-mode';
 
 export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<TabId>('llm-models');
@@ -45,6 +47,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
   const [enableBrowserTools, setEnableBrowserTools] = useState(currentSettings?.enableBrowserTools || false);
   const [enableDuckDuckGo, setEnableDuckDuckGo] = useState(currentSettings?.enableDuckDuckGo || false);
   const [enableFetchTools, setEnableFetchTools] = useState(currentSettings?.enableFetchTools || false);
+  const [enableImageTools, setEnableImageTools] = useState(currentSettings?.enableImageTools ?? false);
   const [memoryLoading, setMemoryLoading] = useState(false);
   const [showTavilyPassword, setShowTavilyPassword] = useState(false);
   const [showZaiPassword, setShowZaiPassword] = useState(false);
@@ -54,6 +57,13 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
   const [llmModels, setLlmModels] = useState<LLMModel[]>([]);
   const [llmLoading, setLlmLoading] = useState(false);
   const [llmError, setLlmError] = useState<string | null>(null);
+
+  // Skills state
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [skillsMarketplaceUrl, setSkillsMarketplaceUrl] = useState("");
+  const [skillsLastFetched, setSkillsLastFetched] = useState<number | undefined>();
+  const [skillsLoading, setSkillsLoading] = useState(false);
+  const [skillsError, setSkillsError] = useState<string | null>(null);
 
   const loadMemoryContent = useCallback(async () => {
     setMemoryLoading(true);
@@ -102,6 +112,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       setEnableBrowserTools(currentSettings.enableBrowserTools || false);
       setEnableDuckDuckGo(currentSettings.enableDuckDuckGo || false);
       setEnableFetchTools(currentSettings.enableFetchTools || false);
+      setEnableImageTools(currentSettings.enableImageTools ?? false);
     }
     
     // ALWAYS load LLM providers from separate file
@@ -185,6 +196,48 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
     setLlmModels(prev => prev.filter(m => m.providerId !== providerId));
   };
 
+  // Skills functions
+  const loadSkills = useCallback(() => {
+    setSkillsLoading(true);
+    setSkillsError(null);
+    window.electron.sendClientEvent({ type: "skills.get" });
+  }, []);
+
+  const refreshSkills = useCallback(() => {
+    setSkillsLoading(true);
+    setSkillsError(null);
+    window.electron.sendClientEvent({ type: "skills.refresh" });
+  }, []);
+
+  const toggleSkill = useCallback((skillId: string, enabled: boolean) => {
+    window.electron.sendClientEvent({ type: "skills.toggle", payload: { skillId, enabled } });
+    setSkills(prev => prev.map(s => s.id === skillId ? { ...s, enabled } : s));
+  }, []);
+
+  const setMarketplaceUrl = useCallback((url: string) => {
+    window.electron.sendClientEvent({ type: "skills.set-marketplace", payload: { url } });
+    setSkillsMarketplaceUrl(url);
+  }, []);
+
+  // Load skills on mount
+  useEffect(() => {
+    loadSkills();
+    
+    const unsubscribe = window.electron.onServerEvent((event) => {
+      if (event.type === "skills.loaded") {
+        setSkills(event.payload.skills);
+        setSkillsMarketplaceUrl(event.payload.marketplaceUrl);
+        setSkillsLastFetched(event.payload.lastFetched);
+        setSkillsLoading(false);
+      } else if (event.type === "skills.error") {
+        setSkillsError(event.payload.message);
+        setSkillsLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [loadSkills]);
+
   const handleSave = async () => {
     const tempValue = parseFloat(temperature);
     
@@ -228,6 +281,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       enableBrowserTools,
       enableDuckDuckGo,
       enableFetchTools,
+      enableImageTools,
       llmProviders: llmProviderSettings
     };
     
@@ -266,6 +320,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
     setEnableBrowserTools(false);
     setEnableDuckDuckGo(false);
     setEnableFetchTools(false);
+    setEnableImageTools(false);
   };
 
   useEffect(() => {
@@ -320,6 +375,16 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
               }`}
             >
               Tools
+            </button>
+            <button
+              onClick={() => setActiveTab('skills')}
+              className={`px-5 py-3 text-sm font-medium transition-colors whitespace-nowrap ${
+                activeTab === 'skills'
+                  ? 'text-ink-900 border-b-2 border-accent'
+                  : 'text-ink-600 hover:text-ink-900'
+              }`}
+            >
+              Skills
             </button>
             <button
               onClick={() => setActiveTab('memory-mode')}
@@ -379,7 +444,22 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
                 setEnableDuckDuckGo={setEnableDuckDuckGo}
                 enableFetchTools={enableFetchTools}
                 setEnableFetchTools={setEnableFetchTools}
+                enableImageTools={enableImageTools}
+                setEnableImageTools={setEnableImageTools}
               />
+            ) : activeTab === 'skills' ? (
+              <div className="p-6">
+                <SkillsTab
+                  skills={skills}
+                  marketplaceUrl={skillsMarketplaceUrl}
+                  lastFetched={skillsLastFetched}
+                  loading={skillsLoading}
+                  error={skillsError}
+                  onToggleSkill={toggleSkill}
+                  onRefresh={refreshSkills}
+                  onSetMarketplaceUrl={setMarketplaceUrl}
+                />
+              </div>
             ) : (
               <MemoryModeTab
                 enableMemory={enableMemory}
@@ -717,7 +797,8 @@ function AddProviderButton({ onAdd, providers, models, setLlmProviders, setLlmMo
     setTesting(true);
     setAvailableModels([]);
 
-    if (!apiKey.trim()) {
+    // API key not required for Claude Code
+    if (type !== 'claude-code' && !apiKey.trim()) {
       setError('API key is required');
       setTesting(false);
       return;
@@ -733,8 +814,8 @@ function AddProviderButton({ onAdd, providers, models, setLlmProviders, setLlmMo
       id: `temp-${Date.now()}`,
       type,
       name: name.trim() || 'Test Provider',
-      apiKey: apiKey.trim(),
-      baseUrl: type === 'openrouter' ? undefined : (type === 'zai' ? baseUrl.trim() : baseUrl.trim()),
+      apiKey: type === 'claude-code' ? '' : apiKey.trim(),
+      baseUrl: type === 'openrouter' || type === 'claude-code' ? undefined : (type === 'zai' ? baseUrl.trim() : baseUrl.trim()),
       zaiApiPrefix: type === 'zai' ? zaiApiPrefix : undefined,
       enabled: true,
     };
@@ -779,7 +860,8 @@ function AddProviderButton({ onAdd, providers, models, setLlmProviders, setLlmMo
       setError('Provider name is required');
       return;
     }
-    if (!apiKey.trim()) {
+    // API key not required for Claude Code
+    if (type !== 'claude-code' && !apiKey.trim()) {
       setError('API key is required');
       return;
     }
@@ -793,8 +875,8 @@ function AddProviderButton({ onAdd, providers, models, setLlmProviders, setLlmMo
       id: `${type}-${name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`,
       type,
       name: name.trim(),
-      apiKey: apiKey.trim(),
-      baseUrl: type === 'openrouter' ? undefined : (type === 'zai' ? baseUrl.trim() : baseUrl.trim()),
+      apiKey: type === 'claude-code' ? '' : apiKey.trim(),
+      baseUrl: type === 'openrouter' || type === 'claude-code' ? undefined : (type === 'zai' ? baseUrl.trim() : baseUrl.trim()),
       zaiApiPrefix: type === 'zai' ? zaiApiPrefix : undefined,
       enabled: true,
     };
@@ -873,6 +955,7 @@ function AddProviderButton({ onAdd, providers, models, setLlmProviders, setLlmMo
                   <option value="openai">OpenAI</option>
                   <option value="openrouter">OpenRouter</option>
                   <option value="zai">Z.AI</option>
+                  <option value="claude-code">Claude Code (Subscription)</option>
                 </select>
               </div>
 
@@ -907,24 +990,37 @@ function AddProviderButton({ onAdd, providers, models, setLlmProviders, setLlmMo
                 </div>
               )}
 
-              <div>
-                <label className="block text-sm font-medium text-ink-700 mb-2">
-                  API Key
-                </label>
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="sk-..."
-                  className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20"
-                />
-              </div>
+              {/* API Key - not needed for Claude Code */}
+              {type !== 'claude-code' && (
+                <div>
+                  <label className="block text-sm font-medium text-ink-700 mb-2">
+                    API Key
+                  </label>
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="sk-..."
+                    className="w-full px-4 py-2.5 text-sm border border-ink-900/20 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20"
+                  />
+                </div>
+              )}
+
+              {/* Claude Code info */}
+              {type === 'claude-code' && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <p className="text-sm text-amber-800">
+                    <strong>Claude Code Subscription</strong><br />
+                    Uses your Claude Code CLI subscription. Make sure you're logged in via <code className="bg-amber-100 px-1 rounded">claude login</code>.
+                  </p>
+                </div>
+              )}
               
               {/* Test Connection Button */}
               <button
                 type="button"
                 onClick={handleTestConnection}
-                disabled={testing || !apiKey.trim() || (type === 'openai' && !baseUrl.trim())}
+                disabled={testing || (type !== 'claude-code' && !apiKey.trim()) || (type === 'openai' && !baseUrl.trim())}
                 className="w-full px-4 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {testing ? (
@@ -1246,7 +1342,9 @@ function ToolsTab({
   enableDuckDuckGo,
   setEnableDuckDuckGo,
   enableFetchTools,
-  setEnableFetchTools
+  setEnableFetchTools,
+  enableImageTools,
+  setEnableImageTools
 }: any) {
   return (
     <div className="px-6 py-4 space-y-6">
@@ -1326,6 +1424,25 @@ function ToolsTab({
               type="checkbox"
               checked={enableFetchTools}
               onChange={(e) => setEnableFetchTools(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-ink-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-ink-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
+          </div>
+        </label>
+
+        {/* Image Tools */}
+        <label className="flex items-center justify-between cursor-pointer mt-4">
+          <div className="flex-1">
+            <span className="block text-sm font-medium text-ink-700">Image Attachments</span>
+            <p className="mt-0.5 text-xs text-ink-500">
+              1 tool: attach_image — convert local images to WebP for model input
+            </p>
+          </div>
+          <div className="relative">
+            <input
+              type="checkbox"
+              checked={enableImageTools}
+              onChange={(e) => setEnableImageTools(e.target.checked)}
               className="sr-only peer"
             />
             <div className="w-11 h-6 bg-ink-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-ink-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>

@@ -19,6 +19,7 @@ export interface ToolResult {
   success: boolean;
   output?: string;
   error?: string;
+  data?: unknown;
 }
 
 export interface ToolExecutionContext {

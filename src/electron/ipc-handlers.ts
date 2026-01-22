@@ -1,8 +1,9 @@
-import { BrowserWindow, shell } from "electron";
+import { BrowserWindow, powerMonitor, shell } from "electron";
 import type { ClientEvent, ServerEvent, MultiThreadTask } from "./types.js";
-// import { runClaude, type RunnerHandle } from "./libs/runner.js"; // Old Claude SDK runner
-import { runClaude, type RunnerHandle } from "./libs/runner-openai.js"; // New OpenAI SDK runner
+import { runClaude as runClaudeSDK, type RunnerHandle } from "./libs/runner.js"; // Claude Code SDK runner (subscription)
+import { runClaude as runOpenAI } from "./libs/runner-openai.js"; // OpenAI SDK runner
 import { SessionStore } from "./libs/session-store.js";
+import type { SessionHistoryPage } from "./libs/session-store.js";
 import { SchedulerStore } from "./libs/scheduler-store.js";
 import { SchedulerService } from "./libs/scheduler-service.js";
 import { loadApiSettings, saveApiSettings } from "./libs/settings-store.js";
@@ -15,16 +16,42 @@ import type { CreateTaskPayload, ThreadTask } from "./types.js";
 import { webCache } from "./libs/web-cache.js";
 import { loadLLMProviderSettings, saveLLMProviderSettings } from "./libs/llm-providers-store.js";
 import { fetchModelsFromProvider, checkModelsAvailability, validateProvider, createProvider } from "./libs/llm-providers.js";
+import { loadSkillsSettings, saveSkillsSettings, toggleSkill, setMarketplaceUrl } from "./libs/skills-store.js";
+import { fetchSkillsFromMarketplace } from "./libs/skills-loader.js";
 
 const DB_PATH = join(app.getPath("userData"), "sessions.db");
 const sessions = new SessionStore(DB_PATH);
 const schedulerStore = new SchedulerStore(sessions['db']); // Access the database
 const runnerHandles = new Map<string, RunnerHandle>();
 const multiThreadTasks = new Map<string, MultiThreadTask>();
+let suppressStreamEvents = false;
+
+app.on("ready", () => {
+  powerMonitor.on("lock-screen", () => {
+    suppressStreamEvents = true;
+  });
+  powerMonitor.on("unlock-screen", () => {
+    suppressStreamEvents = false;
+  });
+});
 
 // Make sessionStore and schedulerStore globally available for runner
 (global as any).sessionStore = sessions;
 (global as any).schedulerStore = schedulerStore;
+
+/**
+ * Select appropriate runner based on model/provider type
+ * - claude-code:: prefix -> use Claude Code SDK (subscription)
+ * - otherwise -> use OpenAI SDK compatible runner
+ */
+function selectRunner(model: string | undefined) {
+  if (model?.startsWith('claude-code::')) {
+    console.log('[IPC] Using Claude Code SDK runner for model:', model);
+    return runClaudeSDK;
+  }
+  console.log('[IPC] Using OpenAI SDK runner for model:', model);
+  return runOpenAI;
+}
 
 // Broadcast function for events without sessionId (session.list, models.loaded, etc.)
 function broadcast(event: ServerEvent) {
@@ -36,7 +63,9 @@ function broadcast(event: ServerEvent) {
 }
 
 function emit(event: ServerEvent) {
-  // Save to database (existing logic)
+  const isStreamEventMessage =
+    event.type === "stream.message" &&
+    (event.payload.message as any)?.type === "stream_event";
   if (event.type === "session.status") {
     sessions.updateSession(event.payload.sessionId, { status: event.payload.status });
 
@@ -69,7 +98,9 @@ function emit(event: ServerEvent) {
         );
       }
     }
-    sessions.recordMessage(event.payload.sessionId, event.payload.message);
+    if (!isStreamEventMessage) {
+      sessions.recordMessage(event.payload.sessionId, event.payload.message);
+    }
   }
   if (event.type === "stream.user_prompt") {
     sessions.recordMessage(event.payload.sessionId, {
@@ -77,7 +108,9 @@ function emit(event: ServerEvent) {
       prompt: event.payload.prompt
     });
   }
-
+  if (isStreamEventMessage && suppressStreamEvents) {
+    return;
+  }
   // Route event through SessionManager
   sessionManager.emit(event, broadcast);
 }
@@ -201,6 +234,7 @@ Format your response clearly with sections.`;
   });
 
   try {
+    const runClaude = selectRunner(session.model);
     const handle = await runClaude({
       prompt: summaryPrompt,
       session,
@@ -244,7 +278,11 @@ export async function handleClientEvent(event: ClientEvent, windowId: number) {
 
   if (event.type === "session.history") {
     const sessionId = event.payload.sessionId;
-    const history = sessions.getSessionHistory(sessionId);
+    const limit = event.payload.limit;
+    const before = event.payload.before;
+    const history = typeof limit === "number"
+      ? sessions.getSessionHistoryPage(sessionId, limit, before)
+      : sessions.getSessionHistory(sessionId);
     if (!history) {
       sessionManager.emitToWindow(windowId, {
         type: "runner.error",
@@ -257,6 +295,9 @@ export async function handleClientEvent(event: ClientEvent, windowId: number) {
     sessionManager.setWindowSession(windowId, sessionId);
 
     // Send history only to this window (including todos)
+    const paged = (typeof limit === "number" && "hasMore" in history)
+      ? (history as SessionHistoryPage)
+      : null;
     sessionManager.emitToWindow(windowId, {
       type: "session.history",
       payload: {
@@ -267,7 +308,10 @@ export async function handleClientEvent(event: ClientEvent, windowId: number) {
         outputTokens: history.session.outputTokens,
         todos: history.todos || [],
         model: history.session.model,
-        fileChanges: history.fileChanges || []
+        fileChanges: history.fileChanges || [],
+        hasMore: paged?.hasMore ?? false,
+        nextCursor: paged?.nextCursor,
+        page: paged ? (before ? "prepend" : "initial") : "initial"
       }
     });
     return;
@@ -323,7 +367,7 @@ export async function handleClientEvent(event: ClientEvent, windowId: number) {
       payload: { sessionId: session.id, prompt: event.payload.prompt }
     });
 
-    runClaude({
+    selectRunner(session.model)({
       prompt: event.payload.prompt,
       session,
       resumeSessionId: session.claudeSessionId,
@@ -389,19 +433,35 @@ export async function handleClientEvent(event: ClientEvent, windowId: number) {
         });
     }
 
+    const isSamePrompt = session.lastPrompt === event.payload.prompt;
     sessions.updateSession(session.id, { status: "running", lastPrompt: event.payload.prompt });
     sessionManager.emitToWindow(windowId, {
       type: "session.status",
       payload: { sessionId: session.id, status: "running", title: sessionTitle, cwd: session.cwd, model: session.model }
     });
 
-    // Use emit() to save user_prompt to DB AND send to UI
-    emit({
-      type: "stream.user_prompt",
-      payload: { sessionId: session.id, prompt: event.payload.prompt }
-    });
+    if (event.payload.retry) {
+      emit({
+        type: "stream.message",
+        payload: {
+          sessionId: session.id,
+          message: {
+            type: "system",
+            subtype: "notice",
+            text: "Retrying the last request..."
+          } as any
+        }
+      });
+    }
 
-    runClaude({
+    if (!isSamePrompt) {
+      emit({
+        type: "stream.user_prompt",
+        payload: { sessionId: session.id, prompt: event.payload.prompt }
+      });
+    }
+
+    selectRunner(session.model)({
       prompt: event.payload.prompt,
       session,
       resumeSessionId: isFirstRun ? undefined : session.claudeSessionId,
@@ -584,7 +644,7 @@ export async function handleClientEvent(event: ClientEvent, windowId: number) {
     });
 
     // Re-run from this point
-    runClaude({
+    selectRunner(session.model)({
       prompt: newPrompt,
       session,
       resumeSessionId: session.claudeSessionId,
@@ -825,7 +885,7 @@ export async function handleClientEvent(event: ClientEvent, windowId: number) {
             payload: { sessionId: threadId, threadId, prompt: consensusPrompt }
           });
 
-          runClaude({
+          selectRunner(thread.model)({
             prompt: consensusPrompt,
             session: thread,
             resumeSessionId: thread.claudeSessionId,
@@ -862,7 +922,7 @@ export async function handleClientEvent(event: ClientEvent, windowId: number) {
             payload: { sessionId: threadId, threadId, prompt: taskPrompt }
           });
 
-          runClaude({
+          selectRunner(thread.model)({
             prompt: taskPrompt,
             session: thread,
             resumeSessionId: thread.claudeSessionId,
@@ -926,7 +986,7 @@ export async function handleClientEvent(event: ClientEvent, windowId: number) {
             payload: { sessionId: threadId, threadId, prompt: consensusPrompt }
           });
 
-          runClaude({
+          selectRunner(thread.model)({
             prompt: consensusPrompt,
             session: thread,
             resumeSessionId: thread.claudeSessionId,
@@ -963,7 +1023,7 @@ export async function handleClientEvent(event: ClientEvent, windowId: number) {
             payload: { sessionId: threadId, threadId, prompt: taskPrompt }
           });
 
-          runClaude({
+          selectRunner(thread.model)({
             prompt: taskPrompt,
             session: thread,
             resumeSessionId: thread.claudeSessionId,
@@ -1211,6 +1271,55 @@ export async function handleClientEvent(event: ClientEvent, windowId: number) {
     });
     return;
   }
+
+  // Skills handlers
+  if (event.type === "skills.get") {
+    const settings = loadSkillsSettings();
+    sessionManager.emitToWindow(windowId, {
+      type: "skills.loaded",
+      payload: {
+        skills: settings.skills,
+        marketplaceUrl: settings.marketplaceUrl,
+        lastFetched: settings.lastFetched
+      }
+    });
+    return;
+  }
+
+  if (event.type === "skills.refresh") {
+    fetchSkillsFromMarketplace()
+      .then(skills => {
+        const settings = loadSkillsSettings();
+        sessionManager.emitToWindow(windowId, {
+          type: "skills.loaded",
+          payload: {
+            skills: settings.skills,
+            marketplaceUrl: settings.marketplaceUrl,
+            lastFetched: settings.lastFetched
+          }
+        });
+      })
+      .catch(error => {
+        console.error('[IPC] Failed to refresh skills:', error);
+        sessionManager.emitToWindow(windowId, {
+          type: "skills.error",
+          payload: { message: String(error) }
+        });
+      });
+    return;
+  }
+
+  if (event.type === "skills.toggle") {
+    const { skillId, enabled } = event.payload;
+    toggleSkill(skillId, enabled);
+    return;
+  }
+
+  if (event.type === "skills.set-marketplace") {
+    const { url } = event.payload;
+    setMarketplaceUrl(url);
+    return;
+  }
 }
 
 async function fetchModels(): Promise<Array<{ id: string; name: string; description?: string }>> {
@@ -1323,7 +1432,7 @@ async function executeScheduledTask(task: any) {
 
   try {
     // Run the prompt
-    await runClaude({
+    await selectRunner(session.model)({
       prompt: task.prompt,
       session,
       onEvent: emit

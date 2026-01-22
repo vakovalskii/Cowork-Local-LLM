@@ -26,6 +26,21 @@ export interface FileChange {
   status: ChangeStatus;      // 'pending' = can be rolled back, 'confirmed' = cannot rollback
 }
 
+// Skill types
+export interface Skill {
+  id: string;
+  name: string;
+  description: string;
+  category?: string;
+  author?: string;
+  version?: string;
+  license?: string;
+  compatibility?: string;
+  repoPath: string;
+  enabled: boolean;
+  lastUpdated?: number;
+}
+
 export type SessionInfo = {
   id: string;
   title: string;
@@ -126,6 +141,7 @@ export type ApiSettings = {
   enableBrowserTools?: boolean; // Enable browser_* tools (11 tools)
   enableDuckDuckGo?: boolean; // Enable search/search_news/search_images (no API key needed)
   enableFetchTools?: boolean; // Enable fetch/fetch_json/download tools
+  enableImageTools?: boolean; // Enable attach_image tool
   llmProviders?: LLMProviderSettings; // LLM providers and models configuration
 };
 
@@ -136,7 +152,7 @@ export type ModelInfo = {
 };
 
 // LLM Provider types
-export type LLMProviderType = 'openai' | 'openrouter' | 'zai';
+export type LLMProviderType = 'openai' | 'openrouter' | 'zai' | 'claude-code';
 
 export type ZaiApiUrlPrefix = 'default' | 'coding';
 
@@ -171,7 +187,7 @@ export type ServerEvent =
   | { type: "stream.user_prompt"; payload: { sessionId: string; prompt: string; threadId?: string } }
   | { type: "session.status"; payload: { sessionId: string; status: SessionStatus; title?: string; cwd?: string; error?: string; model?: string; temperature?: number; threadId?: string } }
   | { type: "session.list"; payload: { sessions: SessionInfo[] } }
-  | { type: "session.history"; payload: { sessionId: string; status: SessionStatus; messages: StreamMessage[]; inputTokens?: number; outputTokens?: number; todos?: TodoItem[]; model?: string; fileChanges?: FileChange[] } }
+  | { type: "session.history"; payload: { sessionId: string; status: SessionStatus; messages: StreamMessage[]; inputTokens?: number; outputTokens?: number; todos?: TodoItem[]; model?: string; fileChanges?: FileChange[]; hasMore?: boolean; nextCursor?: number; page?: "initial" | "prepend" } }
   | { type: "session.deleted"; payload: { sessionId: string } }
   | { type: "permission.request"; payload: { sessionId: string; toolUseId: string; toolName: string; input: unknown; explanation?: string } }
   | { type: "runner.error"; payload: { sessionId?: string; message: string } }
@@ -192,12 +208,15 @@ export type ServerEvent =
   | { type: "llm.providers.saved"; payload: { settings: LLMProviderSettings } }
   | { type: "llm.models.fetched"; payload: { providerId: string; models: LLMModel[] } }
   | { type: "llm.models.error"; payload: { providerId: string; message: string } }
-  | { type: "llm.models.checked"; payload: { unavailableModels: string[] } };
+  | { type: "llm.models.checked"; payload: { unavailableModels: string[] } }
+  // Skills events
+  | { type: "skills.loaded"; payload: { skills: Skill[]; marketplaceUrl: string; lastFetched?: number } }
+  | { type: "skills.error"; payload: { message: string } };
 
 // Client -> Server events
 export type ClientEvent =
   | { type: "session.start"; payload: { title: string; prompt: string; cwd?: string; model?: string; allowedTools?: string; threadId?: string; temperature?: number } }
-  | { type: "session.continue"; payload: { sessionId: string; prompt: string } }
+  | { type: "session.continue"; payload: { sessionId: string; prompt: string; retry?: boolean; retryReason?: string } }
   | { type: "session.stop"; payload: { sessionId: string; } }
   | { type: "session.delete"; payload: { sessionId: string; } }
   | { type: "session.pin"; payload: { sessionId: string; isPinned: boolean; } }
@@ -205,7 +224,7 @@ export type ClientEvent =
   | { type: "session.update"; payload: { sessionId: string; model?: string; temperature?: number; sendTemperature?: boolean; title?: string; } }
   | { type: "session.subscribe"; payload: { sessionId: string; } }
   | { type: "session.list" }
-  | { type: "session.history"; payload: { sessionId: string; } }
+  | { type: "session.history"; payload: { sessionId: string; limit?: number; before?: number } }
   | { type: "permission.response"; payload: { sessionId: string; toolUseId: string; result: PermissionResult; } }
   | { type: "message.edit"; payload: { sessionId: string; messageIndex: number; newPrompt: string; } }
   | { type: "settings.get" }
@@ -223,4 +242,9 @@ export type ClientEvent =
   | { type: "llm.providers.save"; payload: { settings: LLMProviderSettings } }
   | { type: "llm.models.fetch"; payload: { providerId: string } }
   | { type: "llm.models.test"; payload: { provider: LLMProvider } }
-  | { type: "llm.models.check" };
+  | { type: "llm.models.check" }
+  // Skills events
+  | { type: "skills.get" }
+  | { type: "skills.refresh" }
+  | { type: "skills.toggle"; payload: { skillId: string; enabled: boolean } }
+  | { type: "skills.set-marketplace"; payload: { url: string } };

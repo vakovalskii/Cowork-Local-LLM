@@ -17,6 +17,9 @@ const DUCKDUCKGO_TOOLS = ['search', 'search_news', 'search_images'];
 // Fetch/HTTP tool names
 const FETCH_TOOLS = ['fetch', 'fetch_json', 'download', 'fetch_html'];
 
+// Image attachment tool names
+const IMAGE_TOOLS = ['attach_image'];
+
 // Tavily/Z.AI web search tools
 const WEB_SEARCH_TOOLS = ['search_web', 'extract_page'];
 
@@ -52,6 +55,11 @@ export function getTools(settings: ApiSettings | null) {
   // Filter out Fetch tools if not enabled
   if (!settings?.enableFetchTools) {
     tools = tools.filter(tool => !FETCH_TOOLS.includes(tool.function.name));
+  }
+
+  // Filter out Image tools if not enabled
+  if (!settings?.enableImageTools) {
+    tools = tools.filter(tool => !IMAGE_TOOLS.includes(tool.function.name));
   }
   
   // Filter out web search tools only if explicitly disabled

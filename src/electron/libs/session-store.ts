@@ -59,6 +59,15 @@ export type SessionHistory = {
   fileChanges?: FileChange[];
 };
 
+export type SessionHistoryPage = {
+  session: StoredSession;
+  messages: StreamMessage[];
+  todos: TodoItem[];
+  fileChanges?: FileChange[];
+  nextCursor?: number;
+  hasMore: boolean;
+};
+
 export class SessionStore {
   private sessions = new Map<string, Session>();
   private db: Database.Database;
@@ -212,6 +221,88 @@ export class SessionStore {
       messages,
       todos,
       fileChanges
+    };
+  }
+
+  getSessionHistoryPage(id: string, limit: number, beforeCreatedAt?: number): SessionHistoryPage | null {
+    const sessionRow = this.db
+      .prepare(
+        `select id, title, claude_session_id, status, cwd, allowed_tools, last_prompt, model, thread_id, is_pinned, created_at, updated_at, input_tokens, output_tokens, todos, file_changes
+         from sessions
+         where id = ?`
+      )
+      .get(id) as Record<string, unknown> | undefined;
+    if (!sessionRow) return null;
+
+    const messageRows = (this.db
+      .prepare(
+        beforeCreatedAt
+          ? `select data, created_at from messages where session_id = ? and created_at < ? order by created_at desc limit ?`
+          : `select data, created_at from messages where session_id = ? order by created_at desc limit ?`
+      )
+      .all(
+        ...(beforeCreatedAt ? [id, beforeCreatedAt, limit] : [id, limit])
+      ) as Array<Record<string, unknown>>);
+
+    const messagesDesc = messageRows.map((row) => ({
+      data: JSON.parse(String(row.data)) as StreamMessage,
+      createdAt: Number(row.created_at)
+    }));
+
+    const messages = messagesDesc.map((row) => row.data).reverse();
+    const oldestCreatedAt = messagesDesc.length > 0 ? messagesDesc[messagesDesc.length - 1].createdAt : undefined;
+
+    let hasMore = false;
+    if (oldestCreatedAt !== undefined) {
+      const countRow = this.db
+        .prepare(`select count(1) as count from messages where session_id = ? and created_at < ?`)
+        .get(id, oldestCreatedAt) as { count?: number } | undefined;
+      hasMore = Number(countRow?.count || 0) > 0;
+    }
+
+    // Parse todos from JSON
+    let todos: TodoItem[] = [];
+    if (sessionRow.todos) {
+      try {
+        todos = JSON.parse(String(sessionRow.todos)) as TodoItem[];
+      } catch (e) {
+        console.error('Failed to parse todos:', e);
+      }
+    }
+
+    // Parse fileChanges from JSON
+    let fileChanges: FileChange[] = [];
+    if (sessionRow.file_changes) {
+      try {
+        fileChanges = JSON.parse(String(sessionRow.file_changes)) as FileChange[];
+      } catch (e) {
+        console.error('Failed to parse fileChanges:', e);
+      }
+    }
+
+    return {
+      session: {
+        id: String(sessionRow.id),
+        title: String(sessionRow.title),
+        status: sessionRow.status as SessionStatus,
+        cwd: sessionRow.cwd ? String(sessionRow.cwd) : undefined,
+        allowedTools: sessionRow.allowed_tools ? String(sessionRow.allowed_tools) : undefined,
+        lastPrompt: sessionRow.last_prompt ? String(sessionRow.last_prompt) : undefined,
+        model: sessionRow.model ? String(sessionRow.model) : undefined,
+        threadId: sessionRow.thread_id ? String(sessionRow.thread_id) : undefined,
+        claudeSessionId: sessionRow.claude_session_id ? String(sessionRow.claude_session_id) : undefined,
+        isPinned: sessionRow.is_pinned ? Boolean(sessionRow.is_pinned) : false,
+        createdAt: Number(sessionRow.created_at),
+        updatedAt: Number(sessionRow.updated_at),
+        inputTokens: sessionRow.input_tokens ? Number(sessionRow.input_tokens) : undefined,
+        outputTokens: sessionRow.output_tokens ? Number(sessionRow.output_tokens) : undefined,
+        fileChanges
+      },
+      messages,
+      todos,
+      fileChanges,
+      nextCursor: oldestCreatedAt,
+      hasMore
     };
   }
 

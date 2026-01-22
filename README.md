@@ -151,6 +151,10 @@ bun run dev
 }
 ```
 
+## Skills
+<img width="974" height="1123" alt="image" src="https://github.com/user-attachments/assets/8c7fa387-599d-48ab-999a-d5b9c5f811f7" />
+
+
 ## 🛠️ Available Tools
 
 All tools follow `snake_case` naming convention (`verb_noun` pattern):

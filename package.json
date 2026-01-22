@@ -1,10 +1,10 @@
 {
 	"name": "localdesk",
 	"private": true,
-	"version": "0.0.6",
+	"version": "0.0.7",
 	"description": "LocalDesk - Desktop AI Assistant with Local Model Support - OpenAI SDK compatible agent with memory system, file operations, web search, and modern UI",
 	"author": "Valerii Kovalskii <v.kovalskii@example.com>",
-	"license": "MIT",
+	"license": "SEE LICENSE IN LICENSE",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/vakovalskii/LocalDesk.git"
@@ -31,10 +31,10 @@
 	"type": "module",
 	"main": "dist-electron/main.js",
 	"scripts": {
-		"dev:clean": "pkill -f \"[v]ite\\\\b\" 2>/dev/null || true; pkill -f \"[e]lectron\\\\s+\\\\.\" 2>/dev/null || true",
-		"dev": "npm run dev:clean && concurrently -k -n react,electron -c cyan,magenta \"npm run dev:react\" \"npm run dev:electron\"",
+		"dev:clean": "node scripts/dev-clean.cjs",
+		"dev": "node scripts/dev.cjs",
 		"dev:win": "concurrently -k --kill-others-on-fail -n react,electron -c cyan,magenta \"npm run dev:react\" \"npm run dev:electron:delayed\"",
-		"dev:electron:delayed": "node -e \"setTimeout(()=>{},5000)\" && npm run transpile:electron && cross-env NODE_ENV=development electron . --no-sandbox",
+		"dev:electron:delayed": "node scripts/dev-electron-delayed.cjs",
 		"dev:react": "vite --host 0.0.0.0 --port 5173 --strictPort",
 		"dev:electron": "npm run transpile:electron && cross-env NODE_ENV=development electron . --no-sandbox",
 		"build": "tsc -b && vite build",
@@ -57,8 +57,10 @@
 		"@radix-ui/react-tooltip": "^1.2.8",
 		"@tailwindcss/vite": "^4.1.18",
 		"@tavily/core": "^0.7.1",
+		"@types/sharp": "^0.31.1",
 		"better-sqlite3": "^12.6.2",
 		"dotenv": "^17.2.3",
+		"fast-glob": "^3.3.3",
 		"highlight.js": "^11.11.1",
 		"mammoth": "^1.11.0",
 		"mermaid": "^11.12.2",
@@ -66,6 +68,7 @@
 		"openai": "^6.16.0",
 		"os-utils": "^0.0.14",
 		"pdf-parse": "^1.1.1",
+		"playwright": "^1.57.0",
 		"quickjs-emscripten": "^0.31.0",
 		"react": "^19.2.3",
 		"react-dom": "^19.2.3",
@@ -73,12 +76,12 @@
 		"rehype-highlight": "^7.0.2",
 		"rehype-raw": "^7.0.0",
 		"remark-gfm": "^4.0.1",
+		"sharp": "^0.34.5",
 		"tailwindcss": "^4.1.18",
 		"type-check": "^0.4.0",
 		"vite-tsconfig-paths": "^6.0.3",
 		"vm2": "^3.10.1",
-		"zustand": "^5.0.10",
-		"playwright": "^1.57.0"
+		"zustand": "^5.0.10"
 	},
 	"devDependencies": {
 		"@electron/rebuild": "^3.7.2",

@@ -27,6 +27,11 @@ export type SessionView = {
   outputTokens?: number;
   todos?: TodoItem[];
   fileChanges?: FileChange[];
+  historyHasMore?: boolean;
+  historyCursor?: number;
+  historyLoading?: boolean;
+  historyLoadType?: "initial" | "prepend";
+  historyLoadId?: number;
 };
 
 interface AppState {
@@ -56,6 +61,7 @@ interface AppState {
   setShowStartModal: (show: boolean) => void;
   setActiveSessionId: (id: string | null) => void;
   markHistoryRequested: (sessionId: string) => void;
+  setHistoryLoading: (sessionId: string, loading: boolean) => void;
   resolvePermissionRequest: (sessionId: string, toolUseId: string) => void;
   sendEvent: (event: any) => void;
   handleServerEvent: (event: ServerEvent) => void;
@@ -71,7 +77,7 @@ interface AppState {
 }
 
 function createSession(id: string): SessionView {
-  return { id, title: "", status: "idle", messages: [], permissionRequests: [], hydrated: false, todos: [] };
+  return { id, title: "", status: "idle", messages: [], permissionRequests: [], hydrated: false, todos: [], historyHasMore: false, historyLoading: false, historyLoadId: 0 };
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -101,6 +107,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   setShowStartModal: (showStartModal) => set({ showStartModal }),
   setActiveSessionId: (id) => set({ activeSessionId: id }),
   setAutoScrollEnabled: (autoScrollEnabled) => set({ autoScrollEnabled }),
+  setHistoryLoading: (sessionId, loading) => {
+    set((state) => {
+      const existing = state.sessions[sessionId] ?? createSession(sessionId);
+      return {
+        sessions: {
+          ...state.sessions,
+          [sessionId]: {
+            ...existing,
+            historyLoading: loading
+          }
+        }
+      };
+    });
+  },
   setSelectedModel: (selectedModel) => set({ selectedModel }),
   setSelectedTemperature: (selectedTemperature) => set({ selectedTemperature }),
   setSendTemperature: (sendTemperature) => set({ sendTemperature }),
@@ -196,16 +216,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
 
       case "session.history": {
-        const { sessionId, messages, status, inputTokens, outputTokens, todos, model, fileChanges } = event.payload;
+        const { sessionId, messages, status, inputTokens, outputTokens, todos, model, fileChanges, hasMore, nextCursor, page } = event.payload;
         set((state) => {
           const existing = state.sessions[sessionId] ?? createSession(sessionId);
+          const loadType = page ?? "initial";
+          const mergedMessages = loadType === "prepend"
+            ? [...messages, ...(existing.messages || [])]
+            : messages;
           return {
             sessions: {
               ...state.sessions,
               [sessionId]: {
                 ...existing,
                 status,
-                messages,
+                messages: mergedMessages,
                 model: model ?? existing.model,
                 hydrated: true,
                 // Use token counts from payload (from DB), fallback to existing values
@@ -214,7 +238,12 @@ export const useAppStore = create<AppState>((set, get) => ({
                 // Load todos from DB (use empty array if none, don't inherit from previous session)
                 todos: todos ?? [],
                 // Load fileChanges from DB
-                fileChanges: fileChanges ?? []
+                fileChanges: fileChanges ?? [],
+                historyHasMore: hasMore ?? existing.historyHasMore,
+                historyCursor: nextCursor ?? existing.historyCursor,
+                historyLoading: false,
+                historyLoadType: loadType,
+                historyLoadId: (existing.historyLoadId ?? 0) + 1
               }
             }
           };
@@ -287,7 +316,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       case "stream.message": {
         const { sessionId, message } = event.payload;
-        
+
         // OPTIMIZATION: Don't store stream_event messages in store
         // They are only used for live streaming preview in App.tsx (partialMessage)
         // Storing them causes 1000+ state updates per response
@@ -295,7 +324,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           // Skip - handled by handlePartialMessages in App.tsx
           break;
         }
-        
+
         set((state) => {
           const existing = state.sessions[sessionId] ?? createSession(sessionId);
 
