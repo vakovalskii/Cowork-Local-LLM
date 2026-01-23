@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { ApiSettings, CreateTaskPayload, TaskMode, ThreadTask, ModelInfo, LLMModel } from "../types";
+import { getPlatform } from "../platform";
 
 // Helper function to generate task title automatically (max 3 words)
 function generateTaskTitle(
@@ -57,11 +58,16 @@ export function TaskDialog({
   const [recentCwds, setRecentCwds] = useState<string[]>([]);
 
   useEffect(() => {
-    window.electron.getRecentCwds().then(setRecentCwds).catch(console.error);
+    getPlatform()
+      .getRecentCwds()
+      .then(setRecentCwds)
+      .catch((error) => {
+        console.error("[TaskDialog] getRecentCwds failed", { error });
+      });
   }, []);
 
   const handleSelectDirectory = async () => {
-    const result = await window.electron.selectDirectory();
+    const result = await getPlatform().selectDirectory();
     if (result) setLocalCwd(result);
   };
 

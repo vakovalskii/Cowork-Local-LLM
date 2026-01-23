@@ -14,6 +14,8 @@ import { MessageCard } from "./components/EventCard";
 import { AppFooter } from "./components/AppFooter";
 import { TodoPanel } from "./components/TodoPanel";
 import MDContent from "./render/markdown";
+import { getPlatform } from "./platform";
+import { basenameFsPath } from "./platform/fs-path";
 
 function App() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -406,9 +408,13 @@ function App() {
             {!activeSession?.cwd && activeSessionId && (
               <button
                 onClick={async () => {
-                  const result = await window.electron.selectDirectory();
-                  if (result && activeSessionId) {
-                    sendEvent({ type: "session.update-cwd", payload: { sessionId: activeSessionId, cwd: result } });
+                  try {
+                    const result = await getPlatform().selectDirectory();
+                    if (result && activeSessionId) {
+                      sendEvent({ type: "session.update-cwd", payload: { sessionId: activeSessionId, cwd: result } });
+                    }
+                  } catch (error) {
+                    console.error("[App] selectDirectory failed", { error });
                   }
                 }}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-accent/10 border border-accent/30 text-accent rounded-lg hover:bg-accent/20 transition-colors"
@@ -436,10 +442,14 @@ function App() {
                   <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                   </svg>
-                  <span className="truncate">{activeSession.cwd.split('/').pop() || activeSession.cwd}</span>
+                  <span className="truncate">{basenameFsPath(activeSession.cwd)}</span>
                 </button>
                 <button
-                  onClick={() => window.electron.invoke('open-path-in-finder', activeSession.cwd)}
+                  onClick={() => {
+                    void getPlatform()
+                      .invoke('open-path-in-finder', activeSession.cwd)
+                      .catch((error) => console.error('[App] open-path-in-finder failed', { error, path: activeSession.cwd }));
+                  }}
                   className="flex items-center justify-center w-8 h-8 text-ink-600 bg-white border border-l-0 border-ink-900/10 rounded-r-lg hover:bg-ink-50 hover:text-ink-900 transition-colors"
                   style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
                   title="Open in file manager"

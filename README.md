@@ -48,7 +48,15 @@ https://github.com/user-attachments/assets/a8c54ce0-2fe0-40c3-8018-026cab9d7483
 
 ## 🚀 Quick Start
 
-### Installation (Windows)
+### Tauri edition 
+
+```
+git clone https://github.com/vakovalskii/LocalDesk.git 
+make dev
+```
+
+
+### Legacy Electron Installation (Windows):
 
 ```powershell
 # Clone the repository
@@ -66,7 +74,7 @@ npm run dev:win
 > - First run may take 10-15 seconds while dependencies compile. Subsequent runs will be faster.
 > - **To stop:** Press `Ctrl+C` twice to fully terminate both processes (first Ctrl+C sends graceful shutdown, second forces termination).
 
-**Alternative: Manual mode (2 terminals)**
+**Alternative Legacy Electron: Manual mode (2 terminals)**
 
 Terminal 1 - Start Vite dev server:
 ```powershell

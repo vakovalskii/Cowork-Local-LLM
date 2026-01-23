@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { ClientEvent } from "../types";
 import { useAppStore } from "../store/useAppStore";
+import { getPlatform } from "../platform";
 
 const DEFAULT_ALLOWED_TOOLS = "Read,Edit,Bash";
 const MAX_ROWS = 12;
@@ -40,7 +41,7 @@ export function usePromptActions(sendEvent: (event: ClientEvent) => void) {
         setPendingStart(true);
         // Generate title from prompt, or use default for empty sessions
         if (trimmedPrompt) {
-          title = await window.electron.generateSessionTitle(trimmedPrompt);
+          title = await getPlatform().generateSessionTitle(trimmedPrompt);
         } else {
           // Empty session - just chatting
           title = "New Chat";

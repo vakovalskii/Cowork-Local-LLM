@@ -1,6 +1,6 @@
-import { app } from "electron";
 import * as fs from "fs";
 import * as path from "path";
+import { createRequire } from "module";
 
 const SKILLS_FILE = "skills-settings.json";
 
@@ -35,8 +35,23 @@ export interface SkillsSettings {
 
 const DEFAULT_MARKETPLACE_URL = "https://api.github.com/repos/vakovalskii/LocalDesk-Skills/contents/skills";
 
+const require = createRequire(import.meta.url);
+
+function getUserDataDir(): string {
+  const envDir = process.env.LOCALDESK_USER_DATA_DIR;
+  if (envDir && envDir.trim()) return envDir;
+
+  const electronVersion = (process.versions as any)?.electron;
+  if (!electronVersion) {
+    throw new Error("[SkillsStore] LOCALDESK_USER_DATA_DIR is required outside Electron");
+  }
+
+  const electron = require("electron");
+  return electron.app.getPath("userData");
+}
+
 function getSettingsPath(): string {
-  return path.join(app.getPath("userData"), SKILLS_FILE);
+  return path.join(getUserDataDir(), SKILLS_FILE);
 }
 
 export function loadSkillsSettings(): SkillsSettings {

@@ -1,9 +1,24 @@
-import { app } from "electron";
 import * as fs from "fs";
 import * as path from "path";
 import { Skill, SkillMetadata, loadSkillsSettings, updateSkillsList } from "./skills-store.js";
+import { createRequire } from "module";
 
 const SKILLS_CACHE_DIR = "skills-cache";
+
+const require = createRequire(import.meta.url);
+
+function getUserDataDir(): string {
+  const envDir = process.env.LOCALDESK_USER_DATA_DIR;
+  if (envDir && envDir.trim()) return envDir;
+
+  const electronVersion = (process.versions as any)?.electron;
+  if (!electronVersion) {
+    throw new Error("[SkillsLoader] LOCALDESK_USER_DATA_DIR is required outside Electron");
+  }
+
+  const electron = require("electron");
+  return electron.app.getPath("userData");
+}
 
 interface GitHubContent {
   name: string;
@@ -14,7 +29,7 @@ interface GitHubContent {
 }
 
 function getCacheDir(): string {
-  return path.join(app.getPath("userData"), SKILLS_CACHE_DIR);
+  return path.join(getUserDataDir(), SKILLS_CACHE_DIR);
 }
 
 function ensureCacheDir(): void {

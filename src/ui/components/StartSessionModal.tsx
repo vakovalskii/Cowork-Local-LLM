@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { ApiSettings, LLMModel } from "../types";
+import { getPlatform } from "../platform";
 
 interface StartSessionModalProps {
   cwd: string;
@@ -43,7 +44,12 @@ export function StartSessionModal({
   const [modelSearch, setModelSearch] = useState('');
 
   useEffect(() => {
-    window.electron.getRecentCwds().then(setRecentCwds).catch(console.error);
+    getPlatform()
+      .getRecentCwds()
+      .then(setRecentCwds)
+      .catch((error) => {
+        console.error("[StartSessionModal] getRecentCwds failed", { error });
+      });
   }, []);
 
   // Show only enabled models from settings.
@@ -81,7 +87,7 @@ export function StartSessionModal({
   }, [apiSettings, selectedModel, onModelChange]);
 
   const handleSelectDirectory = async () => {
-    const result = await window.electron.selectDirectory();
+    const result = await getPlatform().selectDirectory();
     if (result) onCwdChange(result);
   };
 

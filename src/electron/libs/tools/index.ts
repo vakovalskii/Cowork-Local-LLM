@@ -33,9 +33,6 @@ export * from "./execute-js-tool.js";
 // ReadDocument tool (PDF + DOCX)
 export * from "./read-document-tool.js";
 
-// RenderPage tool (Chromium browser rendering)
-export * from "./render-page-tool.js";
-
 // ManageTodos tool (Task planning)
 export * from "./manage-todos-tool.js";
 
@@ -62,7 +59,6 @@ import { AttachImageToolDefinition } from "./attach-image-tool.js";
 import { MemoryToolDefinition } from "./memory-tool.js";
 import { ExecuteJSToolDefinition } from "./execute-js-tool.js";
 import { ReadDocumentToolDefinition } from "./read-document-tool.js";
-import { RenderPageToolDefinition } from "./render-page-tool.js";
 import { ManageTodosToolDefinition } from "./manage-todos-tool.js";
 import { ScheduleTaskToolDefinition } from "./schedule-task-tool.js";
 import { ALL_GIT_TOOL_DEFINITIONS } from "./git-tool.js";
@@ -70,6 +66,8 @@ import { ALL_FETCH_TOOL_DEFINITIONS } from "./fetch-tool.js";
 import { ALL_BROWSER_TOOL_DEFINITIONS } from "./browser-tool.js";
 import { ALL_SEARCH_TOOL_DEFINITIONS } from "./duckduckgo-search-tool.js";
 import { SkillsToolDefinition } from "./skills-tool.js";
+
+const electronOnlyToolDefinitions: any[] = [];
 
 export const ALL_TOOL_DEFINITIONS = [
   BashToolDefinition,
@@ -85,9 +83,9 @@ export const ALL_TOOL_DEFINITIONS = [
   MemoryToolDefinition,
   ExecuteJSToolDefinition,
   ReadDocumentToolDefinition,
-  RenderPageToolDefinition,
   ManageTodosToolDefinition,
   ScheduleTaskToolDefinition,
+  ...electronOnlyToolDefinitions,
   ...ALL_GIT_TOOL_DEFINITIONS,
   ...ALL_FETCH_TOOL_DEFINITIONS,
   ...ALL_BROWSER_TOOL_DEFINITIONS,

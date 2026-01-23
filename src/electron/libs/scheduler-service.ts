@@ -1,4 +1,4 @@
-import { Notification } from 'electron';
+
 import type { SchedulerStore, ScheduledTask } from './scheduler-store.js';
 
 export type SchedulerCallback = (task: ScheduledTask) => Promise<void>;
@@ -29,7 +29,7 @@ export class SchedulerService {
     }
 
     console.log('[Scheduler] Starting scheduler service');
-    
+
     // Check immediately
     this.checkTasks();
 
@@ -55,13 +55,13 @@ export class SchedulerService {
    */
   private async checkTasks() {
     const now = Date.now();
-    
+
     // Check for tasks that need notifications
     await this.checkNotifications(now);
-    
+
     // Check for tasks due to execute
     const dueTasks = this.schedulerStore.getTasksDueNow(now);
-    
+
     if (dueTasks.length > 0) {
       console.log(`[Scheduler] Found ${dueTasks.length} due tasks`);
     }
@@ -76,11 +76,11 @@ export class SchedulerService {
    */
   private async checkNotifications(now: number) {
     const allTasks = this.schedulerStore.listTasks(false); // Only enabled tasks
-    
+
     for (const task of allTasks) {
       if (task.notifyBefore && !this.notifiedTasks.has(task.id)) {
         const notifyTime = task.nextRun - (task.notifyBefore * 60 * 1000);
-        
+
         // If current time is past notify time but before execution time
         if (now >= notifyTime && now < task.nextRun) {
           this.sendNotification(
@@ -140,14 +140,16 @@ export class SchedulerService {
   /**
    * Send a desktop notification
    */
+  /**
+   * Send a desktop notification
+   */
   private sendNotification(title: string, body: string) {
     try {
-      const notification = new Notification({
-        title,
-        body,
-        silent: false
-      });
-      notification.show();
+      // In sidecar mode, we don't have access to Electron Notification
+      // Use console log for now (will appear in sidecar output)
+      console.log(`[Notification] ${title}: ${body}`);
+
+      // TODO: Send event to UI so it can show a notification
     } catch (error) {
       console.error('[Scheduler] Failed to send notification:', error);
     }
@@ -171,12 +173,12 @@ export class SchedulerService {
       const [, hours, minutes] = dailyMatch;
       const target = new Date(from);
       target.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-      
+
       // If the time has passed today, schedule for tomorrow
       if (target.getTime() <= from) {
         target.setDate(target.getDate() + 1);
       }
-      
+
       return target.getTime();
     }
 

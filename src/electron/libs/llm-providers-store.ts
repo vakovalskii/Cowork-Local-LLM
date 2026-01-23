@@ -1,13 +1,27 @@
-import { app } from "electron";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import type { LLMProviderSettings } from "../types.js";
+import { createRequire } from "module";
 
 const SETTINGS_FILE = "llm-providers-settings.json";
 
+const require = createRequire(import.meta.url);
+
+function getUserDataDir(): string {
+  const envDir = process.env.LOCALDESK_USER_DATA_DIR;
+  if (envDir && envDir.trim()) return envDir;
+
+  const electronVersion = (process.versions as any)?.electron;
+  if (!electronVersion) {
+    throw new Error("[LLM Providers] LOCALDESK_USER_DATA_DIR is required outside Electron");
+  }
+
+  const electron = require("electron");
+  return electron.app.getPath("userData");
+}
+
 function getSettingsPath(): string {
-  const userDataPath = app.getPath("userData");
-  return join(userDataPath, SETTINGS_FILE);
+  return join(getUserDataDir(), SETTINGS_FILE);
 }
 
 export function loadLLMProviderSettings(): LLMProviderSettings | null {
@@ -53,7 +67,7 @@ export function saveLLMProviderSettings(settings: LLMProviderSettings): void {
     }
 
     writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf8");
-    console.log(`[LLM Providers] Saved ${settings.providers.length} providers and ${settings.models.length} models`);
+    writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf8");
   } catch (error) {
     console.error("[LLM Providers] Failed to save settings:", error);
     throw new Error("Failed to save LLM provider settings");

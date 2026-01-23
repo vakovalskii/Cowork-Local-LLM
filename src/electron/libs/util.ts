@@ -1,16 +1,26 @@
 import { claudeCodeEnv, loadClaudeSettingsEnv } from "./claude-settings.js";
 import { loadApiSettings } from "./settings-store.js";
 import type { ApiSettings } from "../types.js";
-import { app } from "electron";
 import { join } from "path";
 import { homedir } from "os";
 import OpenAI from "openai";
+import { createRequire } from "module";
+
+const require = createRequire(import.meta.url);
+
+function getElectronApp(): any | null {
+  const electronVersion = (process.versions as any)?.electron;
+  if (!electronVersion) return null;
+  const electron = require("electron");
+  return electron.app;
+}
 
 // Get Claude Code CLI path for packaged app
 export function getClaudeCodePath(): string | undefined {
-  if (app.isPackaged) {
+  const app = getElectronApp();
+  if (app?.isPackaged) {
     return join(
-      process.resourcesPath,
+      (process as any).resourcesPath,
       'app.asar.unpacked/node_modules/@anthropic-ai/claude-agent-sdk/cli.js'
     );
   }

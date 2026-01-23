@@ -134,7 +134,7 @@ async function fetchZaiModels(apiKey: string, apiPrefix: 'default' | 'coding' = 
 
 // Main function to fetch models from a provider
 export async function fetchModelsFromProvider(provider: LLMProvider): Promise<LLMModel[]> {
-  console.log(`[LLM Providers] Fetching models from provider: ${provider.name} (${provider.type})`);
+  console.error(`[LLM Providers] Fetching models from provider: ${provider.name} (${provider.type})`);
 
   let fetchedModels: PartialModel[] = [];
 
@@ -170,7 +170,7 @@ export async function fetchModelsFromProvider(provider: LLMProvider): Promise<LL
     contextLength: model.contextLength,
   }));
 
-  console.log(`[LLM Providers] Fetched ${models.length} models from ${provider.name}`);
+  console.error(`[LLM Providers] Fetched ${models.length} models from ${provider.name}`);
   return models;
 }
 
@@ -181,7 +181,7 @@ export async function checkModelsAvailability(provider: LLMProvider, models: LLM
   // For OpenAI-compatible APIs, we can check by making a minimal completion request
   if (provider.type === 'openai' || provider.type === 'zai') {
     let baseUrl = provider.baseUrl || (provider.type === 'openai' ? 'https://api.openai.com/v1' : 'https://api.z.ai/api/paas/v4');
-    
+
     // For Z.AI, use the correct prefix
     if (provider.type === 'zai' && provider.zaiApiPrefix === 'coding') {
       baseUrl = 'https://api.z.ai/api/coding/paas/v4';
@@ -213,7 +213,7 @@ export async function checkModelsAvailability(provider: LLMProvider, models: LLM
   } else if (provider.type === 'openrouter') {
     // OpenRouter doesn't have a simple availability check
     // We assume all fetched models are available
-    console.log('[LLM Providers] Skipping availability check for OpenRouter (assumes all models are available)');
+    console.error('[LLM Providers] Skipping availability check for OpenRouter (assumes all models are available)');
   }
 
   return unavailable;

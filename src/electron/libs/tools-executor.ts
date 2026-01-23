@@ -21,7 +21,6 @@ import { executeAttachImageTool } from "./tools/attach-image-tool.js";
 import { executeMemoryTool } from "./tools/memory-tool.js";
 import { executeJSTool } from "./tools/execute-js-tool.js";
 import { executeReadDocumentTool } from "./tools/read-document-tool.js";
-import { executeRenderPageTool } from "./tools/render-page-tool.js";
 import { executeManageTodosTool } from "./tools/manage-todos-tool.js";
 import { ScheduleTaskTool } from "./tools/schedule-task-tool.js";
 import {
@@ -146,7 +145,7 @@ export class ToolExecutor {
   // Update settings dynamically (e.g., when user adds Tavily API key)
   updateSettings(newSettings: ApiSettings | null): void {
     this.apiSettings = newSettings;
-    
+
     const provider = newSettings?.webSearchProvider || "tavily";
     const zaiApiUrl = newSettings?.zaiApiUrl || "default";
 
@@ -331,7 +330,7 @@ export class ToolExecutor {
           return await executeReadDocumentTool(args as any, context);
 
         case "render_page":
-          return await executeRenderPageTool(args as any, context);
+          return { success: false, error: "render_page is not available (Electron dependency removed)" };
 
         case "schedule_task":
           return await this.executeScheduleTask(args, context);

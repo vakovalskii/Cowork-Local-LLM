@@ -1,0 +1,18 @@
+[package]
+name = "localdesk"
+version = "0.0.7"
+description = "LocalDesk - Desktop AI Assistant"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+ rfd = "0.14"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+

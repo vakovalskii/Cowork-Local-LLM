@@ -33,21 +33,13 @@
 	"scripts": {
 		"dev:clean": "node scripts/dev-clean.cjs",
 		"dev": "node scripts/dev.cjs",
-		"dev:win": "concurrently -k --kill-others-on-fail -n react,electron -c cyan,magenta \"npm run dev:react\" \"npm run dev:electron:delayed\"",
-		"dev:electron:delayed": "node scripts/dev-electron-delayed.cjs",
-		"dev:react": "vite --host 0.0.0.0 --port 5173 --strictPort",
-		"dev:electron": "npm run transpile:electron && cross-env NODE_ENV=development electron . --no-sandbox",
+		"dev:react": "vite --host 127.0.0.1 --port 5173 --strictPort",
 		"build": "tsc -b && vite build",
 		"lint": "eslint .",
 		"preview": "vite preview",
-		"postinstall": "electron-rebuild -f -w better-sqlite3 || true",
-		"generate-build-info": "node scripts/generate-build-info.js",
-		"transpile:electron": "npm run generate-build-info && tsc --project src/electron/tsconfig.json && npm run copy:prompts && npm run copy:build-info",
+		"transpile:sidecar": "tsc --project src/sidecar/tsconfig.json && npm run copy:sidecar-prompts",
 		"copy:prompts": "node -e \"const fs=require('fs');const path=require('path');fs.mkdirSync('dist-electron/libs/prompts',{recursive:true});fs.readdirSync('src/electron/libs/prompts').filter(f=>f.endsWith('.txt')).forEach(f=>fs.copyFileSync(path.join('src/electron/libs/prompts',f),path.join('dist-electron/libs/prompts',f)))\"",
-		"copy:build-info": "node -e \"const fs=require('fs');fs.copyFileSync('src/electron/build-info.json','dist-electron/build-info.json')\"",
-		"dist:mac": "npm run transpile:electron && npm run build && electron-builder --mac --arm64",
-		"dist:win": "npm run transpile:electron && npm run build && electron-builder --win --x64",
-		"dist:linux": "npm run transpile:electron && npm run build && electron-builder --linux --x64",
+		"copy:sidecar-prompts": "node -e \"const fs=require('fs');const path=require('path');fs.mkdirSync('dist-sidecar/electron/libs/prompts',{recursive:true});fs.readdirSync('src/electron/libs/prompts').filter(f=>f.endsWith('.txt')).forEach(f=>fs.copyFileSync(path.join('src/electron/libs/prompts',f),path.join('dist-sidecar/electron/libs/prompts',f)))\"",
 		"type-check": "tsc --noEmit"
 	},
 	"dependencies": {
@@ -84,7 +76,6 @@
 		"zustand": "^5.0.10"
 	},
 	"devDependencies": {
-		"@electron/rebuild": "^3.7.2",
 		"@eslint/js": "^9.39.2",
 		"@types/better-sqlite3": "^7.6.13",
 		"@types/glob": "^8.1.0",
@@ -95,8 +86,6 @@
 		"@vitejs/plugin-react": "^5.1.2",
 		"concurrently": "^9.2.0",
 		"cross-env": "^10.1.0",
-		"electron": "^39.2.7",
-		"electron-builder": "^26.4.0",
 		"eslint": "^9.39.2",
 		"eslint-plugin-react-hooks": "^7.0.1",
 		"eslint-plugin-react-refresh": "^0.4.26",

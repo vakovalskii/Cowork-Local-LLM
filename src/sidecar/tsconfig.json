@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ESNext",
+    "module": "NodeNext",
+    "outDir": "../../dist-sidecar",
+    "rootDir": "..",
+    "skipLibCheck": true,
+    "types": [
+      "../../types"
+    ]
+  },
+  "include": [
+    "./**/*",
+    "../electron/types.ts",
+    "../ui/types.ts",
+    "../electron/git-utils.ts",
+    "../electron/libs/**/*"
+  ],
+  "exclude": [
+    "../electron/main.ts",
+    "../electron/preload.cts",
+    "../electron/ipc-handlers.ts",
+    "../electron/session-manager.ts",
+    "../electron/test.ts",
+    "../electron/util.ts"
+  ]
+}
+
