@@ -37,6 +37,9 @@
     ],
     "externalBin": [
       "bin/local-desk-sidecar"
-    ]
+    ],
+    "resources": {
+      "../dist-sidecar/agent/libs/prompts": "prompts"
+    }
   }
 }

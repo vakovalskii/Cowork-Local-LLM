@@ -27,8 +27,11 @@ export * from "./duckduckgo-search-tool.js";
 // Memory tool
 export * from "./memory-tool.js";
 
-// Execute JS tool (WASM QuickJS sandbox - works out of the box)
+// Execute JS tool (works out of the box)
 export * from "./execute-js-tool.js";
+
+// Execute Python tool (requires Python 3 installed)
+export * from "./execute-python-tool.js";
 
 // ReadDocument tool (PDF + DOCX)
 export * from "./read-document-tool.js";
@@ -58,6 +61,7 @@ import { ZaiReaderToolDefinition } from "./zai-reader.js";
 import { AttachImageToolDefinition } from "./attach-image-tool.js";
 import { MemoryToolDefinition } from "./memory-tool.js";
 import { ExecuteJSToolDefinition } from "./execute-js-tool.js";
+import { ExecutePythonToolDefinition } from "./execute-python-tool.js";
 import { ReadDocumentToolDefinition } from "./read-document-tool.js";
 import { ManageTodosToolDefinition } from "./manage-todos-tool.js";
 import { ScheduleTaskToolDefinition } from "./schedule-task-tool.js";
@@ -82,6 +86,7 @@ export const ALL_TOOL_DEFINITIONS = [
   AttachImageToolDefinition,
   MemoryToolDefinition,
   ExecuteJSToolDefinition,
+  ExecutePythonToolDefinition,
   ReadDocumentToolDefinition,
   ManageTodosToolDefinition,
   ScheduleTaskToolDefinition,

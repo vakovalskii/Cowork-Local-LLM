@@ -10,28 +10,30 @@ export const ExecuteJSToolDefinition: ToolDefinition = {
   type: "function",
   function: {
     name: "execute_js",
-    description: `Execute JavaScript code in a secure isolated WASM sandbox (QuickJS engine).
-Works out of the box - no installation needed on user's machine.
+    description: `Execute JavaScript code in QuickJS WASM sandbox. NOT Node.js!
 
-**AVAILABLE GLOBALS** (no imports needed - just use directly):
-- fs.readFileSync(path) - read file content
-- fs.writeFileSync(path, data) - write file
-- fs.existsSync(path) - check if file exists  
-- fs.readdirSync(path) - list directory
-- path.join(...), path.resolve(...), path.dirname(), path.basename(), path.extname()
-- console.log(), console.error(), console.warn()
-- JSON, Math, Date, __dirname
+**AVAILABLE APIs** (use directly, NO imports):
+- fs: readFileSync(path), writeFileSync(path, data), existsSync(path), readdirSync(path)
+- path: join(), resolve(), dirname(), basename(), extname()
+- console: log(), error(), warn(), info()
+- Built-in: JSON, Math, Date, String, Array, Object
+- env.CWD - current working directory
 
-**CODE FORMAT**: Code runs inside (function(){ ... })() wrapper. Use 'return' to output results.
+**NOT AVAILABLE (will fail):**
+- require(), import, export - NO module system
+- console.assert(), console.table() - only log/error/warn/info
+- fetch(), XMLHttpRequest - NO network
+- async/await, Promise - NO async
+- setTimeout, setInterval - NO timers
+- npm packages, Node.js modules
+
+**FORMAT**: Code runs in (function(){ ... })() wrapper. Use 'return' for output.
 
 **EXAMPLE**:
-const files = fs.readdirSync('/');
-const data = fs.readFileSync('/data.json');
-const parsed = JSON.parse(data);
-console.log('Found', files.length, 'files');
-return { count: parsed.items.length };
-
-**LIMITATIONS**: No ES modules (import/export), no TypeScript, no async/await, no fetch, no npm packages.`,
+var files = fs.readdirSync('/');
+var data = JSON.parse(fs.readFileSync('/data.json'));
+console.log('Found ' + files.length + ' files');
+return { count: data.items.length };`,
     parameters: {
       type: "object",
       properties: {

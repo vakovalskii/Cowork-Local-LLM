@@ -57,6 +57,8 @@ export class SkillsTool extends BaseTool {
     },
     context: ToolExecutionContext
   ): Promise<ToolResult> {
+    const cwd = context.cwd; // Pass cwd to download skills to workspace
+    
     try {
       switch (args.operation) {
         case "list_available":
@@ -66,13 +68,13 @@ export class SkillsTool extends BaseTool {
           if (!args.skill_id) {
             return { success: false, error: "skill_id is required for 'get' operation" };
           }
-          return this.getSkill(args.skill_id);
+          return this.getSkill(args.skill_id, cwd);
           
         case "list_files":
           if (!args.skill_id) {
             return { success: false, error: "skill_id is required for 'list_files' operation" };
           }
-          return this.listSkillFiles(args.skill_id);
+          return this.listSkillFiles(args.skill_id, cwd);
           
         case "read_file":
           if (!args.skill_id) {
@@ -81,7 +83,7 @@ export class SkillsTool extends BaseTool {
           if (!args.file_path) {
             return { success: false, error: "file_path is required for 'read_file' operation" };
           }
-          return this.readSkillFile(args.skill_id, args.file_path);
+          return this.readSkillFile(args.skill_id, args.file_path, cwd);
           
         default:
           return { success: false, error: `Unknown operation: ${args.operation}` };
@@ -114,7 +116,7 @@ export class SkillsTool extends BaseTool {
     };
   }
   
-  private async getSkill(skillId: string): Promise<ToolResult> {
+  private async getSkill(skillId: string, cwd?: string): Promise<ToolResult> {
     // Check if skill is enabled
     const enabledSkills = getEnabledSkills();
     const skill = enabledSkills.find((s: Skill) => s.id === skillId);
@@ -137,7 +139,8 @@ export class SkillsTool extends BaseTool {
     }
     
     try {
-      const content = await readSkillContent(skillId);
+      // Pass cwd to download skill to workspace/.localdesk/skills/
+      const content = await readSkillContent(skillId, cwd);
       
       return {
         success: true,
@@ -151,7 +154,7 @@ export class SkillsTool extends BaseTool {
     }
   }
   
-  private async listSkillFiles(skillId: string): Promise<ToolResult> {
+  private async listSkillFiles(skillId: string, cwd?: string): Promise<ToolResult> {
     const enabledSkills = getEnabledSkills();
     const skill = enabledSkills.find((s: Skill) => s.id === skillId);
     
@@ -163,13 +166,13 @@ export class SkillsTool extends BaseTool {
     }
     
     try {
-      const files = await listSkillFiles(skillId);
+      const files = await listSkillFiles(skillId, cwd);
       
       const filesList = files.map((f: string) => `- ${f}`).join("\n");
       
       return {
         success: true,
-        output: `## Files in skill "${skillId}":\n\n${filesList}\n\nUse operation "read_file" to read any of these files.`
+        output: `## Files in skill "${skillId}":\n\n${filesList}\n\n**To read these files, use this tool again with:**\n\`\`\`json\n{ "operation": "read_file", "skill_id": "${skillId}", "file_path": "<filename>" }\n\`\`\`\n\n⚠️ Do NOT use the regular \`read_file\` tool - these files are inside the skill directory.`
       };
     } catch (error: any) {
       return {
@@ -179,7 +182,7 @@ export class SkillsTool extends BaseTool {
     }
   }
   
-  private async readSkillFile(skillId: string, filePath: string): Promise<ToolResult> {
+  private async readSkillFile(skillId: string, filePath: string, cwd?: string): Promise<ToolResult> {
     const enabledSkills = getEnabledSkills();
     const skill = enabledSkills.find((s: Skill) => s.id === skillId);
     
@@ -191,7 +194,7 @@ export class SkillsTool extends BaseTool {
     }
     
     try {
-      const content = await readSkillFile(skillId, filePath);
+      const content = await readSkillFile(skillId, filePath, cwd);
       
       return {
         success: true,

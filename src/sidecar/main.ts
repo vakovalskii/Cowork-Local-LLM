@@ -1,32 +1,25 @@
 import readline from "node:readline";
-import { join } from "node:path";
 import type { ClientEvent } from "../ui/types.js";
-import type { ServerEvent } from "../electron/types.js";
+import type { ServerEvent } from "../agent/types.js";
 import type { SidecarInboundMessage, SidecarOutboundMessage } from "./protocol.js";
-import { SessionStore } from "../electron/libs/session-store.js";
-import { SchedulerStore } from "../electron/libs/scheduler-store.js";
-import { runClaude as runClaudeSDK } from "../electron/libs/runner.js";
-import { runClaude as runOpenAI } from "../electron/libs/runner-openai.js";
-import { loadApiSettings, saveApiSettings } from "../electron/libs/settings-store.js";
-import { loadLLMProviderSettings, saveLLMProviderSettings } from "../electron/libs/llm-providers-store.js";
-import { fetchModelsFromProvider, checkModelsAvailability } from "../electron/libs/llm-providers.js";
-import { loadSkillsSettings, toggleSkill, setMarketplaceUrl } from "../electron/libs/skills-store.js";
-import { fetchSkillsFromMarketplace } from "../electron/libs/skills-loader.js";
-import { webCache } from "../electron/libs/web-cache.js";
-import * as gitUtils from "../electron/git-utils.js";
+
+// Use in-memory session store - no SQLite/better-sqlite3 dependency
+import { MemorySessionStore } from "./session-store-memory.js";
+
+import { runClaude as runClaudeSDK } from "../agent/libs/runner.js";
+import { runClaude as runOpenAI } from "../agent/libs/runner-openai.js";
+import { loadApiSettings, saveApiSettings } from "../agent/libs/settings-store.js";
+import { loadLLMProviderSettings, saveLLMProviderSettings } from "../agent/libs/llm-providers-store.js";
+import { fetchModelsFromProvider, checkModelsAvailability } from "../agent/libs/llm-providers.js";
+import { loadSkillsSettings, toggleSkill, setMarketplaceUrl } from "../agent/libs/skills-store.js";
+import { fetchSkillsFromMarketplace } from "../agent/libs/skills-loader.js";
+import { webCache } from "../agent/libs/web-cache.js";
+import * as gitUtils from "../agent/git-utils.js";
 
 type RunnerHandle = {
   abort: () => void;
   resolvePermission: (toolUseId: string, approved: boolean) => void;
 };
-
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value || !value.trim()) {
-    throw new Error(`[sidecar] Missing required env var: ${name}`);
-  }
-  return value;
-}
 
 function writeOut(msg: SidecarOutboundMessage) {
   process.stdout.write(`${JSON.stringify(msg)}\n`);
@@ -36,15 +29,20 @@ function emit(event: ServerEvent) {
   writeOut({ type: "server-event", event });
 }
 
-const userDataDir = requireEnv("LOCALDESK_USER_DATA_DIR");
-const dbPath = join(userDataDir, "sessions.db");
+// In-memory session store - persistent data is handled by Rust/Tauri
+const sessions = new MemorySessionStore();
 
-const sessions = new SessionStore(dbPath);
-const schedulerStore = new SchedulerStore((sessions as any)["db"]);
+// Sync session changes to Rust DB
+sessions.setSyncCallback((type, sessionId, data) => {
+  emit({
+    type: "session.sync",
+    payload: { syncType: type, sessionId, data }
+  } as any);
+});
 
-// Make sessionStore and schedulerStore globally available for runner (matches Electron behavior)
+// Make sessionStore globally available for runner (matches Electron behavior)
+// Note: schedulerStore is now handled by Tauri
 (global as any).sessionStore = sessions;
-(global as any).schedulerStore = schedulerStore;
 
 const runnerHandles = new Map<string, RunnerHandle>();
 const multiThreadTasks = new Map<string, any>();
@@ -233,15 +231,15 @@ function handleSessionList() {
 }
 
 function handleSessionHistory(event: Extract<ClientEvent, { type: "session.history" }>) {
-  const { sessionId, limit, before } = event.payload;
-  const history = typeof limit === "number" ? sessions.getSessionHistoryPage(sessionId, limit, before) : sessions.getSessionHistory(sessionId);
+  const { sessionId } = event.payload;
+  // In-memory store doesn't support pagination, return full history
+  const history = sessions.getSessionHistory(sessionId);
 
   if (!history) {
     sendRunnerError("Unknown session");
     return;
   }
 
-  const paged = typeof limit === "number" && (history as any).hasMore !== undefined ? (history as any) : null;
   emit({
     type: "session.history",
     payload: {
@@ -253,9 +251,9 @@ function handleSessionHistory(event: Extract<ClientEvent, { type: "session.histo
       todos: history.todos || [],
       model: history.session.model,
       fileChanges: history.fileChanges || [],
-      hasMore: paged?.hasMore ?? false,
-      nextCursor: paged?.nextCursor,
-      page: paged ? (before ? "prepend" : "initial") : "initial",
+      hasMore: false,
+      nextCursor: undefined,
+      page: "initial",
     },
   } as any);
 }
@@ -317,8 +315,38 @@ function handleSessionStart(event: Extract<ClientEvent, { type: "session.start" 
 }
 
 function handleSessionContinue(event: Extract<ClientEvent, { type: "session.continue" }>) {
-  const { sessionId, prompt } = event.payload;
-  const session = sessions.getSession(sessionId);
+  const { sessionId, prompt, sessionData, messages: historyMessages, todos: historyTodos } = event.payload as any;
+  let session = sessions.getSession(sessionId);
+  
+  // If session not in memory, try to restore from sessionData (provided by Rust)
+  if (!session && sessionData) {
+    session = sessions.createSession({
+      id: sessionId,
+      title: sessionData.title || "Restored Session",
+      cwd: sessionData.cwd,
+      model: sessionData.model,
+      allowedTools: sessionData.allowedTools,
+      temperature: sessionData.temperature,
+    });
+    
+    // Restore message history from DB (critical for LLM context)
+    if (historyMessages && Array.isArray(historyMessages)) {
+      console.log(`[sidecar] Restoring ${historyMessages.length} messages for session ${sessionId}`);
+      for (const msg of historyMessages) {
+        // recordMessage adds to in-memory store (don't sync back to DB - they're already there)
+        const messages = (sessions as any).messages.get(sessionId) || [];
+        messages.push(msg);
+        (sessions as any).messages.set(sessionId, messages);
+      }
+    }
+    
+    // Restore todos from DB
+    if (historyTodos && Array.isArray(historyTodos)) {
+      console.log(`[sidecar] Restoring ${historyTodos.length} todos for session ${sessionId}`);
+      (sessions as any).todos.set(sessionId, historyTodos);
+    }
+  }
+  
   if (!session) {
     sendRunnerError("Unknown session");
     return;
@@ -340,6 +368,22 @@ function handleSessionStop(event: Extract<ClientEvent, { type: "session.stop" }>
   if (handle) {
     handle.abort();
     runnerHandles.delete(sessionId);
+  }
+  
+  // Update session status and notify UI
+  const session = sessions.getSession(sessionId);
+  if (session) {
+    sessions.updateSession(sessionId, { status: "idle" });
+    emit({
+      type: "session.status",
+      payload: { 
+        sessionId, 
+        status: "idle", 
+        title: session.title, 
+        cwd: session.cwd, 
+        model: session.model 
+      }
+    } as any);
   }
 }
 
@@ -400,8 +444,37 @@ function handlePermissionResponse(event: Extract<ClientEvent, { type: "permissio
 }
 
 function handleMessageEdit(event: Extract<ClientEvent, { type: "message.edit" }>) {
-  const { sessionId, messageIndex, newPrompt } = event.payload;
-  const session = sessions.getSession(sessionId);
+  const { sessionId, messageIndex, newPrompt, sessionData, messages: historyMessages, todos: historyTodos } = event.payload as any;
+  let session = sessions.getSession(sessionId);
+  
+  // If session not in memory, try to restore from sessionData (provided by Rust)
+  if (!session && sessionData) {
+    session = sessions.createSession({
+      id: sessionId,
+      title: sessionData.title || "Restored Session",
+      cwd: sessionData.cwd,
+      model: sessionData.model,
+      allowedTools: sessionData.allowedTools,
+      temperature: sessionData.temperature,
+    });
+    
+    // Restore message history from DB (critical for LLM context)
+    if (historyMessages && Array.isArray(historyMessages)) {
+      console.log(`[sidecar] Restoring ${historyMessages.length} messages for session ${sessionId} (message.edit)`);
+      for (const msg of historyMessages) {
+        const messages = (sessions as any).messages.get(sessionId) || [];
+        messages.push(msg);
+        (sessions as any).messages.set(sessionId, messages);
+      }
+    }
+    
+    // Restore todos from DB
+    if (historyTodos && Array.isArray(historyTodos)) {
+      console.log(`[sidecar] Restoring ${historyTodos.length} todos for session ${sessionId}`);
+      (sessions as any).todos.set(sessionId, historyTodos);
+    }
+  }
+  
   if (!session) {
     sendRunnerError("Unknown session");
     return;
@@ -986,7 +1059,7 @@ async function handleClientEvent(event: ClientEvent) {
 
 const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 
-writeOut({ type: "log", level: "info", message: "Sidecar started", context: { dbPath } });
+writeOut({ type: "log", level: "info", message: "Sidecar started (in-memory mode)", context: {} });
 
 rl.on("line", (line) => {
   if (!line.trim()) return;

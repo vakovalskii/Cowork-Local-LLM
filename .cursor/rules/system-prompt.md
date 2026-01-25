@@ -7,7 +7,7 @@ The system prompt is built dynamically from a template with variable substitutio
 
 ## Template Location
 
-`src/electron/libs/prompts/system.txt`
+`src/agent/libs/prompts/system.txt`
 
 ## Template Structure
 
@@ -77,7 +77,7 @@ Variables are replaced at runtime in `prompt-loader.ts`:
 
 ## Building the Prompt
 
-`src/electron/libs/prompt-loader.ts`:
+`src/agent/libs/prompt-loader.ts`:
 
 ```typescript
 export function getSystemPrompt(cwd: string, toolsSummary: string = ''): string {

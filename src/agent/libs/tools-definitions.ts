@@ -108,7 +108,7 @@ export function generateToolsSummary(tools: typeof ALL_TOOL_DEFINITIONS): string
       categories['Browser'].push(name);
     } else if (['read_file', 'write_file', 'edit_file', 'search_files', 'search_text', 'read_document', 'attach_image'].includes(name)) {
       categories['File'].push(name);
-    } else if (name === 'execute_js') {
+    } else if (name === 'execute_js' || name === 'execute_python') {
       categories['Code'].push(name);
     } else if (name === 'run_command') {
       categories['System'].push(name);

@@ -35,8 +35,10 @@ export interface SkillsSettings {
 
 const DEFAULT_MARKETPLACE_URL = "https://api.github.com/repos/vakovalskii/LocalDesk-Skills/contents/skills";
 
-// In bundled CJS, require is available. In ESM dev, we need createRequire.
-const require = typeof globalThis.require === "function" ? globalThis.require : createRequire(import.meta.url);
+// In pkg binary, import.meta.url is undefined. Use eval to get require in CJS context.
+const require = (process as any).pkg
+  ? eval('require')
+  : (typeof globalThis.require === "function" ? globalThis.require : createRequire(import.meta.url));
 
 function getUserDataDir(): string {
   const envDir = process.env.LOCALDESK_USER_DATA_DIR;

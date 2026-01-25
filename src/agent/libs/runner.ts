@@ -7,7 +7,10 @@ import { writeFileSync, appendFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { createRequire } from "module";
-const require = typeof globalThis.require === "function" ? globalThis.require : createRequire(import.meta.url);
+// In pkg binary, import.meta.url is undefined. Use eval to get require in CJS context.
+const require = (process as any).pkg
+  ? eval('require')
+  : (typeof globalThis.require === "function" ? globalThis.require : createRequire(import.meta.url));
 
 const https = require("https");
 const http = require("http");

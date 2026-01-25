@@ -1,9 +1,11 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import type { ApiSettings } from "../types.js";
-// In bundled CJS, require is available. In ESM dev, we need createRequire.
 import { createRequire } from "module";
-const require = typeof globalThis.require === "function" ? globalThis.require : createRequire(import.meta.url);
+// In pkg binary, import.meta.url is undefined. Use eval to get require in CJS context.
+const require = (process as any).pkg
+  ? eval('require')
+  : (typeof globalThis.require === "function" ? globalThis.require : createRequire(import.meta.url));
 
 const SETTINGS_FILE = "api-settings.json";
 

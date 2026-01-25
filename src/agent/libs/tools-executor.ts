@@ -20,6 +20,7 @@ import { ZaiReaderTool } from "./tools/zai-reader.js";
 import { executeAttachImageTool } from "./tools/attach-image-tool.js";
 import { executeMemoryTool } from "./tools/memory-tool.js";
 import { executeJSTool } from "./tools/execute-js-tool.js";
+import { executePythonTool } from "./tools/execute-python-tool.js";
 import { executeReadDocumentTool } from "./tools/read-document-tool.js";
 import { executeManageTodosTool } from "./tools/manage-todos-tool.js";
 import { ScheduleTaskTool } from "./tools/schedule-task-tool.js";
@@ -325,6 +326,9 @@ export class ToolExecutor {
 
         case "execute_js":
           return await executeJSTool(args as any, context);
+
+        case "execute_python":
+          return await executePythonTool(args as any, context);
 
         case "read_document":
           return await executeReadDocumentTool(args as any, context);

@@ -2,7 +2,7 @@
 
 # LocalDesk
 
-[![Version](https://img.shields.io/badge/version-0.0.6-blue.svg)](https://github.com/vakovalskii/LocalDesk/releases)
+[![Version](https://img.shields.io/badge/version-0.0.7-blue.svg)](https://github.com/vakovalskii/LocalDesk/releases)
 [![Platform](https://img.shields.io/badge/platform-%20Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/vakovalskii/LocalDesk)
 [![License](https://img.shields.io/badge/license-Community-blue.svg)](LICENSE)
 
@@ -22,7 +22,7 @@ https://github.com/user-attachments/assets/a8c54ce0-2fe0-40c3-8018-026cab9d7483
 - ✅ **Task Planning** — visual todo panel with progress tracking, persisted per session
 - ✅ **OpenAI SDK** — full API control, compatible with any OpenAI-compatible endpoint
 - ✅ **Local Models** — vLLM, Ollama, LM Studio support
-- ✅ **WASM Sandbox** — secure JavaScript execution via QuickJS (no Node.js required)
+- ✅ **Code Sandboxes** — JavaScript (Node.js vm) and Python (system subprocess) execution
 - ✅ **Document Support** — PDF and DOCX text extraction (bundled, works out of the box)
 - ✅ **Web Search** — Tavily and Z.AI integration for internet search
 - ✅ **Telegram Parsing** — render t.me channels with reactions, views, auto-scroll for older posts
@@ -30,8 +30,9 @@ https://github.com/user-attachments/assets/a8c54ce0-2fe0-40c3-8018-026cab9d7483
 - ✅ **Cross-platform** — Windows, macOS, Linux with proper shell commands
 
 ### UI/UX Features
-- ✅ **Modern Interface** — React + Electron with smooth auto-scroll and streaming
+- ✅ **Modern Interface** — React + Tauri with smooth auto-scroll and streaming
 - ✅ **Message Editing** — edit and resend messages with history truncation
+- ✅ **Session Persistence** — sessions survive app restart (SQLite backed)
 - ✅ **Session Management** — pin important sessions, search through chat history
 - ✅ **Keyboard Shortcuts** — Cmd+Enter/Ctrl+Enter to send messages
 - ✅ **Spell Check** — built-in spell checking with context menu suggestions
@@ -226,7 +227,8 @@ All tools follow `snake_case` naming convention (`verb_noun` pattern):
 ### Code Execution
 | Tool | Description |
 |------|-------------|
-| `execute_js` | Run JavaScript in secure WASM sandbox (QuickJS) |
+| `execute_js` | Run JavaScript in secure Node.js vm sandbox |
+| `execute_python` | Run Python code (system Python with pip packages) |
 
 ### Web Tools
 | Tool | Description |
@@ -259,7 +261,7 @@ All tools follow `snake_case` naming convention (`verb_noun` pattern):
 # Build executable and installer
 npm run dist:win
 
-# Output: dist/LocalDesk Setup 0.0.6.exe
+# Output: dist/LocalDesk Setup 0.0.7.exe
 ```
 
 ### macOS

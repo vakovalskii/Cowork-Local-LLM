@@ -12,18 +12,18 @@
   },
   "include": [
     "./**/*",
-    "../electron/types.ts",
+    "../agent/types.ts",
     "../ui/types.ts",
-    "../electron/git-utils.ts",
-    "../electron/libs/**/*"
+    "../agent/git-utils.ts",
+    "../agent/libs/**/*"
   ],
   "exclude": [
-    "../electron/main.ts",
-    "../electron/preload.cts",
-    "../electron/ipc-handlers.ts",
-    "../electron/session-manager.ts",
-    "../electron/test.ts",
-    "../electron/util.ts"
+    "../agent/main.ts",
+    "../agent/preload.cts",
+    "../agent/ipc-handlers.ts",
+    "../agent/session-manager.ts",
+    "../agent/test.ts",
+    "../agent/util.ts"
   ]
 }
 

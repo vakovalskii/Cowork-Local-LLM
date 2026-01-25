@@ -1,24 +1,30 @@
 import * as fs from "fs";
 import * as path from "path";
+import { homedir } from "os";
 import { Skill, SkillMetadata, loadSkillsSettings, updateSkillsList } from "./skills-store.js";
 
-const SKILLS_CACHE_DIR = "skills-cache";
+const LOCALDESK_DIR = ".localdesk";
+const SKILLS_SUBDIR = "skills";
 
-// In bundled CJS, require is available. In ESM dev, we need createRequire.
-import { createRequire } from "module";
-const require = typeof globalThis.require === "function" ? globalThis.require : createRequire(import.meta.url);
-
-function getUserDataDir(): string {
-  const envDir = process.env.LOCALDESK_USER_DATA_DIR;
-  if (envDir && envDir.trim()) return envDir;
-
-  const electronVersion = (process.versions as any)?.electron;
-  if (!electronVersion) {
-    throw new Error("[SkillsLoader] LOCALDESK_USER_DATA_DIR is required outside Electron");
+/**
+ * Get skills directory path.
+ * If cwd is provided, use {cwd}/skills/  (project-local)
+ * Otherwise, use global ~/.localdesk/skills/
+ */
+function getSkillsDir(cwd?: string): string {
+  if (cwd && cwd.trim()) {
+    // Project-local: {cwd}/skills/
+    return path.join(cwd, SKILLS_SUBDIR);
   }
+  // Global fallback: ~/.localdesk/skills/
+  return path.join(homedir(), LOCALDESK_DIR, SKILLS_SUBDIR);
+}
 
-  const electron = require("electron");
-  return electron.app.getPath("userData");
+/**
+ * Get global skills directory (fallback when no cwd)
+ */
+function getGlobalSkillsDir(): string {
+  return path.join(homedir(), LOCALDESK_DIR, SKILLS_SUBDIR);
 }
 
 interface GitHubContent {
@@ -29,15 +35,12 @@ interface GitHubContent {
   url: string;
 }
 
-function getCacheDir(): string {
-  return path.join(getUserDataDir(), SKILLS_CACHE_DIR);
-}
-
-function ensureCacheDir(): void {
-  const cacheDir = getCacheDir();
-  if (!fs.existsSync(cacheDir)) {
-    fs.mkdirSync(cacheDir, { recursive: true });
+function ensureSkillsDir(cwd?: string): string {
+  const skillsDir = getSkillsDir(cwd);
+  if (!fs.existsSync(skillsDir)) {
+    fs.mkdirSync(skillsDir, { recursive: true });
   }
+  return skillsDir;
 }
 
 /**
@@ -181,8 +184,10 @@ export async function fetchSkillsFromMarketplace(): Promise<Skill[]> {
 
 /**
  * Download and cache a skill's full contents
+ * @param skillId - The skill ID to download
+ * @param cwd - Optional working directory. If provided, skill is saved to {cwd}/.localdesk/skills/
  */
-export async function downloadSkill(skillId: string): Promise<string> {
+export async function downloadSkill(skillId: string, cwd?: string): Promise<string> {
   const settings = loadSkillsSettings();
   const skill = settings.skills.find(s => s.id === skillId);
 
@@ -190,10 +195,10 @@ export async function downloadSkill(skillId: string): Promise<string> {
     throw new Error(`Skill not found: ${skillId}`);
   }
 
-  ensureCacheDir();
-  const skillCacheDir = path.join(getCacheDir(), skillId);
+  const skillsDir = ensureSkillsDir(cwd);
+  const skillCacheDir = path.join(skillsDir, skillId);
 
-  console.log(`[SkillsLoader] Downloading skill: ${skillId}`);
+  console.log(`[SkillsLoader] Downloading skill: ${skillId} to ${skillCacheDir}`);
 
   // Create skill cache directory
   if (!fs.existsSync(skillCacheDir)) {
@@ -258,24 +263,36 @@ async function downloadContents(
 
 /**
  * Get cached skill directory path (or download if not cached)
+ * Checks both workspace-local and global cache
+ * @param skillId - The skill ID
+ * @param cwd - Optional working directory
  */
-export async function getSkillPath(skillId: string): Promise<string> {
-  const skillCacheDir = path.join(getCacheDir(), skillId);
-
-  // Check if already cached
-  if (fs.existsSync(skillCacheDir) && fs.existsSync(path.join(skillCacheDir, "SKILL.md"))) {
-    return skillCacheDir;
+export async function getSkillPath(skillId: string, cwd?: string): Promise<string> {
+  // First check workspace-local cache
+  if (cwd) {
+    const localSkillDir = path.join(getSkillsDir(cwd), skillId);
+    if (fs.existsSync(localSkillDir) && fs.existsSync(path.join(localSkillDir, "SKILL.md"))) {
+      return localSkillDir;
+    }
   }
 
-  // Download and cache
-  return downloadSkill(skillId);
+  // Then check global cache
+  const globalSkillDir = path.join(getGlobalSkillsDir(), skillId);
+  if (fs.existsSync(globalSkillDir) && fs.existsSync(path.join(globalSkillDir, "SKILL.md"))) {
+    return globalSkillDir;
+  }
+
+  // Download to workspace-local or global (based on cwd)
+  return downloadSkill(skillId, cwd);
 }
 
 /**
  * Read skill's SKILL.md content
+ * @param skillId - The skill ID
+ * @param cwd - Optional working directory
  */
-export async function readSkillContent(skillId: string): Promise<string> {
-  const skillPath = await getSkillPath(skillId);
+export async function readSkillContent(skillId: string, cwd?: string): Promise<string> {
+  const skillPath = await getSkillPath(skillId, cwd);
   const skillMdPath = path.join(skillPath, "SKILL.md");
 
   if (fs.existsSync(skillMdPath)) {
@@ -287,9 +304,11 @@ export async function readSkillContent(skillId: string): Promise<string> {
 
 /**
  * List files in a skill directory
+ * @param skillId - The skill ID
+ * @param cwd - Optional working directory
  */
-export async function listSkillFiles(skillId: string): Promise<string[]> {
-  const skillPath = await getSkillPath(skillId);
+export async function listSkillFiles(skillId: string, cwd?: string): Promise<string[]> {
+  const skillPath = await getSkillPath(skillId, cwd);
   const files: string[] = [];
 
   function walkDir(dir: string, prefix: string = ""): void {
@@ -312,9 +331,12 @@ export async function listSkillFiles(skillId: string): Promise<string[]> {
 
 /**
  * Read a specific file from a skill
+ * @param skillId - The skill ID
+ * @param filePath - Relative path within the skill
+ * @param cwd - Optional working directory
  */
-export async function readSkillFile(skillId: string, filePath: string): Promise<string> {
-  const skillPath = await getSkillPath(skillId);
+export async function readSkillFile(skillId: string, filePath: string, cwd?: string): Promise<string> {
+  const skillPath = await getSkillPath(skillId, cwd);
   const fullPath = path.join(skillPath, filePath);
 
   // Security check - prevent path traversal
@@ -331,12 +353,41 @@ export async function readSkillFile(skillId: string, filePath: string): Promise<
 
 /**
  * Clear skills cache
+ * @param cwd - Optional working directory. If provided, clears workspace-local cache. Otherwise clears global cache.
  */
-export function clearSkillsCache(): void {
-  const cacheDir = getCacheDir();
+export function clearSkillsCache(cwd?: string): void {
+  const skillsDir = getSkillsDir(cwd);
 
-  if (fs.existsSync(cacheDir)) {
-    fs.rmSync(cacheDir, { recursive: true, force: true });
-    console.log("[SkillsLoader] Skills cache cleared");
+  if (fs.existsSync(skillsDir)) {
+    fs.rmSync(skillsDir, { recursive: true, force: true });
+    console.log(`[SkillsLoader] Skills cache cleared: ${skillsDir}`);
   }
+}
+
+/**
+ * List all downloaded skills (both local and global)
+ * @param cwd - Optional working directory
+ */
+export function listDownloadedSkills(cwd?: string): { local: string[], global: string[] } {
+  const result = { local: [] as string[], global: [] as string[] };
+
+  // Check workspace-local
+  if (cwd) {
+    const localDir = getSkillsDir(cwd);
+    if (fs.existsSync(localDir)) {
+      result.local = fs.readdirSync(localDir, { withFileTypes: true })
+        .filter(d => d.isDirectory())
+        .map(d => d.name);
+    }
+  }
+
+  // Check global
+  const globalDir = getGlobalSkillsDir();
+  if (fs.existsSync(globalDir)) {
+    result.global = fs.readdirSync(globalDir, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .map(d => d.name);
+  }
+
+  return result;
 }

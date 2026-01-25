@@ -97,7 +97,7 @@ export function createTauriPlatform(): PlatformAdapter {
       };
     },
 
-    generateSessionTitle: (userInput) => tauriInvoke("generate_session_title", { user_input: userInput }),
+    generateSessionTitle: (userInput) => tauriInvoke("generate_session_title", { user_input: userInput ?? "" }),
     getRecentCwds: (limit) => tauriInvoke("get_recent_cwds", { limit }),
     selectDirectory: () => tauriInvoke("select_directory"),
 

@@ -95,6 +95,7 @@ const redactMessagesForLog = (messages: ChatMessage[]) => {
 export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
   const { prompt, session, onEvent, onSessionUpdate } = options;
   let aborted = false;
+  const abortController = new AbortController();
   const MAX_STREAM_RETRIES = 3;
   const RETRY_BASE_DELAY_MS = 500;
 
@@ -276,11 +277,12 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
         maxRetries: 2
       });
 
-      // Get scheduler store from global
-      const schedulerStore = (global as any).schedulerStore;
+      // Get scheduler store from global (may be undefined in sidecar mode)
+      const schedulerStore = (global as any).schedulerStore || undefined;
 
       // Initialize tool executor with API settings for web tools
       // If no cwd, pass empty string to enable "no workspace" mode
+      // schedulerStore is optional - schedule_task tool won't be available without it
       const toolExecutor = new ToolExecutor(session.cwd || '', guiSettings, schedulerStore);
 
       // Build conversation history from session
@@ -580,7 +582,7 @@ export async function runClaude(options: RunnerOptions): Promise<RunnerHandle> {
                 parallel_tool_calls: true,
                 stream_options: { include_usage: true },
                 ...(temperature !== undefined ? { temperature } : {})
-              });
+              }, { signal: abortController.signal });
 
               for await (const chunk of stream) {
                 if (aborted) {
@@ -1243,6 +1245,7 @@ DO NOT call the same tool again with similar arguments.`
   return {
     abort: () => {
       aborted = true;
+      abortController.abort();
       console.log('[OpenAI Runner] Aborted');
     },
     resolvePermission: (toolUseId: string, approved: boolean) => {

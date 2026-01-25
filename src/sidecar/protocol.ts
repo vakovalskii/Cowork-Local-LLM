@@ -1,5 +1,5 @@
 import type { ClientEvent } from "../ui/types.js";
-import type { ServerEvent } from "../electron/types.js";
+import type { ServerEvent } from "../agent/types.js";
 
 export type SidecarInboundMessage =
   | { type: "client-event"; event: ClientEvent };

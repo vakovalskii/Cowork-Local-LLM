@@ -1,15 +1,19 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 #![allow(dead_code)] // TODO: remove after migration complete
 
+mod db;
+mod sandbox;
+
+use db::{Database, CreateSessionParams, UpdateSessionParams, Session, SessionHistory, TodoItem, FileChange, LLMProvider, LLMModel, LLMProviderSettings, ApiSettings};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -186,6 +190,64 @@ fn memory_path() -> Result<PathBuf, String> {
   Ok(home_dir()?.join(".localdesk").join("memory.md"))
 }
 
+/// Handle session.sync events from sidecar - save to DB
+fn handle_session_sync(db: &Arc<Database>, payload: &Value) {
+  let sync_type = payload.get("syncType").and_then(|v| v.as_str()).unwrap_or("");
+  let session_id = match payload.get("sessionId").and_then(|v| v.as_str()) {
+    Some(id) => id,
+    None => return,
+  };
+  let data = payload.get("data").cloned().unwrap_or(Value::Null);
+  
+  match sync_type {
+    "create" => {
+      let title = data.get("title").and_then(|v| v.as_str()).unwrap_or("New Chat");
+      let params = CreateSessionParams {
+        id: Some(session_id.to_string()),
+        cwd: data.get("cwd").and_then(|v| v.as_str()).map(String::from),
+        allowed_tools: data.get("allowedTools").and_then(|v| v.as_str()).map(String::from),
+        prompt: None,
+        title: title.to_string(),
+        model: data.get("model").and_then(|v| v.as_str()).map(String::from),
+        thread_id: data.get("threadId").and_then(|v| v.as_str()).map(String::from),
+        temperature: None,
+      };
+      if let Err(e) = db.create_session(&params) {
+        eprintln!("[session.sync:create] Failed: {}", e);
+      }
+    }
+    "update" => {
+      let params = UpdateSessionParams {
+        title: data.get("title").and_then(|v| v.as_str()).map(String::from),
+        status: data.get("status").and_then(|v| v.as_str()).map(String::from),
+        cwd: data.get("cwd").and_then(|v| v.as_str()).map(String::from),
+        model: data.get("model").and_then(|v| v.as_str()).map(String::from),
+        input_tokens: data.get("inputTokens").and_then(|v| v.as_i64()),
+        output_tokens: data.get("outputTokens").and_then(|v| v.as_i64()),
+        ..Default::default()
+      };
+      if let Err(e) = db.update_session(session_id, &params) {
+        eprintln!("[session.sync:update] Failed: {}", e);
+      }
+    }
+    "message" => {
+      if let Err(e) = db.record_message(session_id, &data) {
+        eprintln!("[session.sync:message] Failed: {}", e);
+      }
+    }
+    "todos" => {
+      if let Ok(todos) = serde_json::from_value::<Vec<TodoItem>>(data) {
+        if let Err(e) = db.save_todos(session_id, &todos) {
+          eprintln!("[session.sync:todos] Failed: {}", e);
+        }
+      }
+    }
+    _ => {
+      eprintln!("[session.sync] Unknown syncType: {}", sync_type);
+    }
+  }
+}
+
 fn normalize_llm_provider_settings(value: Option<Value>) -> Value {
   let mut obj = match value {
     Some(Value::Object(o)) => o,
@@ -245,6 +307,11 @@ fn open_target(target: &str) -> Result<(), String> {
     }
     return Ok(());
   }
+}
+
+struct AppState {
+  db: Arc<Database>,
+  sidecar: SidecarState,
 }
 
 #[derive(Default)]
@@ -318,13 +385,6 @@ fn start_sidecar(app: tauri::AppHandle, sidecar_state: &SidecarState) -> Result<
 
   let user_data_dir = app_data_dir()?;
   fs::create_dir_all(&user_data_dir).map_err(|error| format!("[sidecar] Failed to create user data dir: {error}"))?;
-
-// Revert ShellExt import
-// use tauri_plugin_shell::ShellExt; 
-
-// ... inside start_sidecar
-
-  let entry = resolve_sidecar_entry()?;
   
   let mut child_cmd;
   
@@ -332,15 +392,12 @@ fn start_sidecar(app: tauri::AppHandle, sidecar_state: &SidecarState) -> Result<
   {
      let node_bin = resolve_node_bin()?;
      child_cmd = Command::new(&node_bin);
-     child_cmd.arg(entry);
+     child_cmd.arg(&entry);
   }
   
   #[cfg(not(debug_assertions))]
   {
-      // In prod, entry IS the binary path.
-      // We need to resolve it relative to the executable if resolve_sidecar_entry didn't already.
-      // Actually let's assume resolve_sidecar_entry handles logic.
-      child_cmd = Command::new(entry);
+      child_cmd = Command::new(&entry);
   }
 
   let mut child = child_cmd
@@ -364,7 +421,12 @@ fn start_sidecar(app: tauri::AppHandle, sidecar_state: &SidecarState) -> Result<
         match line {
           Ok(raw) => {
             let raw: String = raw;
-            if raw.trim().is_empty() {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+              continue;
+            }
+            // Skip debug log lines (not JSON) - they start with [ or other non-JSON chars
+            if !trimmed.starts_with('{') {
               continue;
             }
             let parsed: serde_json::Value = match serde_json::from_str(&raw) {
@@ -378,7 +440,18 @@ fn start_sidecar(app: tauri::AppHandle, sidecar_state: &SidecarState) -> Result<
             let msg_type = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
             if msg_type == "server-event" {
               if let Some(event) = parsed.get("event") {
-                eprintln!("[sidecar] Emitting server-event: {}", event.get("type").and_then(|t| t.as_str()).unwrap_or("unknown"));
+                let event_type = event.get("type").and_then(|t| t.as_str()).unwrap_or("unknown");
+                
+                // Handle session.sync events - save to DB
+                if event_type == "session.sync" {
+                  if let Some(payload) = event.get("payload") {
+                    let state: tauri::State<'_, AppState> = app_handle.state();
+                    handle_session_sync(&state.db, payload);
+                  }
+                  continue; // Don't emit to frontend
+                }
+                
+                eprintln!("[sidecar] Emitting server-event: {}", event_type);
                 if let Err(error) = emit_server_event_app(&app_handle, event) {
                   eprintln!("[sidecar] Failed to emit server-event: {error}");
                 }
@@ -429,10 +502,10 @@ fn start_sidecar(app: tauri::AppHandle, sidecar_state: &SidecarState) -> Result<
   Ok(())
 }
 
-fn send_to_sidecar(app: tauri::AppHandle, sidecar_state: &SidecarState, event: &Value) -> Result<(), String> {
-  start_sidecar(app, sidecar_state)?;
+fn send_to_sidecar(app: tauri::AppHandle, state: &AppState, event: &Value) -> Result<(), String> {
+  start_sidecar(app, &state.sidecar)?;
 
-  let mut guard = sidecar_state.child.lock().map_err(|_| "[sidecar] state lock poisoned".to_string())?;
+  let mut guard = state.sidecar.child.lock().map_err(|_| "[sidecar] state lock poisoned".to_string())?;
   let child = guard.as_mut().ok_or_else(|| "[sidecar] sidecar is not running".to_string())?;
 
   let msg = json!({ "type": "client-event", "event": event });
@@ -566,13 +639,146 @@ fn generate_session_title(user_input: Option<String>) -> Result<String, String> 
 }
 
 #[tauri::command]
-fn get_recent_cwds(limit: Option<u32>) -> Result<Vec<String>, String> {
-  let _ = limit;
-  Ok(Vec::new())
+fn get_recent_cwds(state: tauri::State<'_, AppState>, limit: Option<u32>) -> Result<Vec<String>, String> {
+  state.db.list_recent_cwds(limit.unwrap_or(8))
+    .map_err(|e| format!("[get_recent_cwds] {}", e))
+}
+
+// ============ Code Sandbox Commands ============
+
+#[tauri::command]
+fn sandbox_execute_js(code: String, cwd: String, timeout_ms: Option<u64>) -> sandbox::SandboxResult {
+  eprintln!("[sandbox] execute_js: {} bytes, cwd={}", code.len(), cwd);
+  sandbox::execute_javascript(&code, &cwd, timeout_ms.unwrap_or(5000))
 }
 
 #[tauri::command]
-fn client_event(app: tauri::AppHandle, sidecar: tauri::State<'_, SidecarState>, event: Value) -> Result<(), String> {
+fn sandbox_execute_python(code: String, cwd: String, timeout_ms: Option<u64>) -> sandbox::SandboxResult {
+  eprintln!("[sandbox] execute_python: {} bytes, cwd={}", code.len(), cwd);
+  sandbox::execute_python(&code, &cwd, timeout_ms.unwrap_or(5000))
+}
+
+#[tauri::command]
+fn sandbox_execute(code: String, language: String, cwd: String, timeout_ms: Option<u64>) -> sandbox::SandboxResult {
+  eprintln!("[sandbox] execute_{}: {} bytes, cwd={}", language, code.len(), cwd);
+  sandbox::execute_code(&code, &language, &cwd, timeout_ms.unwrap_or(5000))
+}
+
+// Session commands - handled directly in Rust
+#[tauri::command]
+fn db_session_list(state: tauri::State<'_, AppState>) -> Result<Vec<Session>, String> {
+  state.db.list_sessions()
+    .map_err(|e| format!("[db_session_list] {}", e))
+}
+
+#[tauri::command]
+fn db_session_create(state: tauri::State<'_, AppState>, params: CreateSessionParams) -> Result<Session, String> {
+  state.db.create_session(&params)
+    .map_err(|e| format!("[db_session_create] {}", e))
+}
+
+#[tauri::command]
+fn db_session_get(state: tauri::State<'_, AppState>, id: String) -> Result<Option<Session>, String> {
+  state.db.get_session(&id)
+    .map_err(|e| format!("[db_session_get] {}", e))
+}
+
+#[tauri::command]
+fn db_session_update(state: tauri::State<'_, AppState>, id: String, params: UpdateSessionParams) -> Result<bool, String> {
+  state.db.update_session(&id, &params)
+    .map_err(|e| format!("[db_session_update] {}", e))
+}
+
+#[tauri::command]
+fn db_session_delete(state: tauri::State<'_, AppState>, id: String) -> Result<bool, String> {
+  state.db.delete_session(&id)
+    .map_err(|e| format!("[db_session_delete] {}", e))
+}
+
+#[tauri::command]
+fn db_session_history(state: tauri::State<'_, AppState>, id: String) -> Result<Option<SessionHistory>, String> {
+  state.db.get_session_history(&id)
+    .map_err(|e| format!("[db_session_history] {}", e))
+}
+
+#[tauri::command]
+fn db_session_pin(state: tauri::State<'_, AppState>, id: String, is_pinned: bool) -> Result<(), String> {
+  state.db.set_pinned(&id, is_pinned)
+    .map_err(|e| format!("[db_session_pin] {}", e))
+}
+
+#[tauri::command]
+fn db_record_message(state: tauri::State<'_, AppState>, session_id: String, message: Value) -> Result<(), String> {
+  state.db.record_message(&session_id, &message)
+    .map_err(|e| format!("[db_record_message] {}", e))
+}
+
+#[tauri::command]
+fn db_update_tokens(state: tauri::State<'_, AppState>, id: String, input_tokens: i64, output_tokens: i64) -> Result<(), String> {
+  state.db.update_tokens(&id, input_tokens, output_tokens)
+    .map_err(|e| format!("[db_update_tokens] {}", e))
+}
+
+#[tauri::command]
+fn db_save_todos(state: tauri::State<'_, AppState>, session_id: String, todos: Vec<TodoItem>) -> Result<(), String> {
+  state.db.save_todos(&session_id, &todos)
+    .map_err(|e| format!("[db_save_todos] {}", e))
+}
+
+#[tauri::command]
+fn db_save_file_changes(state: tauri::State<'_, AppState>, session_id: String, changes: Vec<FileChange>) -> Result<(), String> {
+  state.db.save_file_changes(&session_id, &changes)
+    .map_err(|e| format!("[db_save_file_changes] {}", e))
+}
+
+// ============ Settings commands ============
+
+#[tauri::command]
+fn db_get_api_settings(state: tauri::State<'_, AppState>) -> Result<Option<ApiSettings>, String> {
+  state.db.get_api_settings()
+    .map_err(|e| format!("[db_get_api_settings] {}", e))
+}
+
+#[tauri::command]
+fn db_save_api_settings(state: tauri::State<'_, AppState>, settings: ApiSettings) -> Result<(), String> {
+  state.db.save_api_settings(&settings)
+    .map_err(|e| format!("[db_save_api_settings] {}", e))
+}
+
+// ============ LLM Providers commands ============
+
+#[tauri::command]
+fn db_get_llm_providers(state: tauri::State<'_, AppState>) -> Result<LLMProviderSettings, String> {
+  state.db.get_llm_provider_settings()
+    .map_err(|e| format!("[db_get_llm_providers] {}", e))
+}
+
+#[tauri::command]
+fn db_save_llm_providers(state: tauri::State<'_, AppState>, settings: LLMProviderSettings) -> Result<(), String> {
+  state.db.save_llm_provider_settings(&settings)
+    .map_err(|e| format!("[db_save_llm_providers] {}", e))
+}
+
+#[tauri::command]
+fn db_save_provider(state: tauri::State<'_, AppState>, provider: LLMProvider) -> Result<(), String> {
+  state.db.save_provider(&provider)
+    .map_err(|e| format!("[db_save_provider] {}", e))
+}
+
+#[tauri::command]
+fn db_delete_provider(state: tauri::State<'_, AppState>, id: String) -> Result<bool, String> {
+  state.db.delete_provider(&id)
+    .map_err(|e| format!("[db_delete_provider] {}", e))
+}
+
+#[tauri::command]
+fn db_save_models(state: tauri::State<'_, AppState>, models: Vec<LLMModel>) -> Result<(), String> {
+  state.db.save_models_bulk(&models)
+    .map_err(|e| format!("[db_save_models] {}", e))
+}
+
+#[tauri::command]
+fn client_event(app: tauri::AppHandle, state: tauri::State<'_, AppState>, event: Value) -> Result<(), String> {
   let event_type = event
     .get("type")
     .and_then(|v| v.as_str())
@@ -597,16 +803,434 @@ fn client_event(app: tauri::AppHandle, sidecar: tauri::State<'_, SidecarState>, 
       Ok(())
     }
 
+    // Session list - handled directly from Rust DB
+    "session.list" => {
+      let sessions = state.db.list_sessions()
+        .map_err(|e| format!("[session.list] {}", e))?;
+      emit_server_event_app(&app, &json!({
+        "type": "session.list",
+        "payload": { "sessions": sessions }
+      }))?;
+      Ok(())
+    }
+
+    // Session history - handled directly from Rust DB
+    "session.history" => {
+      let payload = event.get("payload")
+        .ok_or_else(|| "[session.history] missing payload".to_string())?;
+      let session_id = payload.get("sessionId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "[session.history] missing sessionId".to_string())?;
+      
+      match state.db.get_session_history(session_id) {
+        Ok(Some(history)) => {
+          emit_server_event_app(&app, &json!({
+            "type": "session.history",
+            "payload": {
+              "sessionId": history.session.id,
+              "status": history.session.status,
+              "messages": history.messages,
+              "inputTokens": history.session.input_tokens,
+              "outputTokens": history.session.output_tokens,
+              "todos": history.todos,
+              "model": history.session.model,
+              "fileChanges": history.file_changes,
+              "hasMore": false,
+              "page": "initial"
+            }
+          }))?;
+        }
+        Ok(None) => {
+          emit_server_event_app(&app, &json!({
+            "type": "runner.error",
+            "payload": { "message": "Session not found" }
+          }))?;
+        }
+        Err(e) => {
+          emit_server_event_app(&app, &json!({
+            "type": "runner.error",
+            "payload": { "message": format!("Failed to get session history: {}", e) }
+          }))?;
+        }
+      }
+      Ok(())
+    }
+
+    // Session delete - handled in Rust
+    "session.delete" => {
+      let payload = event.get("payload")
+        .ok_or_else(|| "[session.delete] missing payload".to_string())?;
+      let session_id = payload.get("sessionId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "[session.delete] missing sessionId".to_string())?;
+      
+      state.db.delete_session(session_id)
+        .map_err(|e| format!("[session.delete] {}", e))?;
+      
+      emit_server_event_app(&app, &json!({
+        "type": "session.deleted",
+        "payload": { "sessionId": session_id }
+      }))?;
+      
+      // Also send updated session list
+      let sessions = state.db.list_sessions()
+        .map_err(|e| format!("[session.delete] list failed: {}", e))?;
+      emit_server_event_app(&app, &json!({
+        "type": "session.list",
+        "payload": { "sessions": sessions }
+      }))?;
+      Ok(())
+    }
+
+    // Session pin - handled in Rust
+    "session.pin" => {
+      let payload = event.get("payload")
+        .ok_or_else(|| "[session.pin] missing payload".to_string())?;
+      let session_id = payload.get("sessionId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "[session.pin] missing sessionId".to_string())?;
+      let is_pinned = payload.get("isPinned")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+      
+      state.db.set_pinned(session_id, is_pinned)
+        .map_err(|e| format!("[session.pin] {}", e))?;
+      
+      // Send updated session list
+      let sessions = state.db.list_sessions()
+        .map_err(|e| format!("[session.pin] list failed: {}", e))?;
+      emit_server_event_app(&app, &json!({
+        "type": "session.list",
+        "payload": { "sessions": sessions }
+      }))?;
+      Ok(())
+    }
+
+    // Code Sandbox - execute JS/Python in Rust
+    "sandbox.execute" => {
+      let payload = event.get("payload").ok_or_else(|| "[sandbox.execute] missing payload".to_string())?;
+      let code = payload.get("code").and_then(|v| v.as_str())
+        .ok_or_else(|| "[sandbox.execute] missing code".to_string())?;
+      let language = payload.get("language").and_then(|v| v.as_str()).unwrap_or("javascript");
+      let cwd = payload.get("cwd").and_then(|v| v.as_str()).unwrap_or("/tmp");
+      let timeout_ms = payload.get("timeoutMs").and_then(|v| v.as_u64()).unwrap_or(5000);
+      let request_id = payload.get("requestId").and_then(|v| v.as_str()).map(String::from);
+      
+      let result = sandbox::execute_code(code, language, cwd, timeout_ms);
+      
+      emit_server_event_app(&app, &json!({
+        "type": "sandbox.result",
+        "payload": {
+          "requestId": request_id,
+          "result": result
+        }
+      }))?;
+      Ok(())
+    }
+
+    // LLM operations - forward to sidecar
+    "session.start" | "session.stop" | "permission.response" => {
+      send_to_sidecar(app, state.inner(), &event)
+    }
+
+    // message.edit - enrich with session data and messages from DB for sidecar to restore
+    "message.edit" => {
+      let payload = event.get("payload").ok_or_else(|| "[message.edit] missing payload".to_string())?;
+      let session_id = payload.get("sessionId").and_then(|v| v.as_str())
+        .ok_or_else(|| "[message.edit] missing sessionId".to_string())?;
+      let message_index = payload.get("messageIndex").and_then(|v| v.as_u64())
+        .ok_or_else(|| "[message.edit] missing messageIndex".to_string())? as usize;
+      
+      eprintln!("[message.edit] Looking up session: {}, truncating after index {}", session_id, message_index);
+      
+      // Truncate history in DB first (before sending to sidecar)
+      if let Err(e) = state.db.truncate_history_after(session_id, message_index) {
+        eprintln!("[message.edit] Failed to truncate history in DB: {}", e);
+      }
+      
+      // Get session history from DB (after truncation) to provide full context to sidecar
+      match state.db.get_session_history(session_id) {
+        Ok(Some(history)) => {
+          eprintln!("[message.edit] Found session: title='{}', messages={} (after truncation)", 
+            history.session.title, history.messages.len());
+          
+          // Enrich the event with session data AND message history
+          let enriched_event = json!({
+            "type": "message.edit",
+            "payload": {
+              "sessionId": session_id,
+              "messageIndex": message_index,
+              "newPrompt": payload.get("newPrompt"),
+              // Session data for restoration in sidecar
+              "sessionData": {
+                "title": history.session.title,
+                "cwd": history.session.cwd,
+                "model": history.session.model,
+                "allowedTools": history.session.allowed_tools,
+                "temperature": history.session.temperature
+              },
+              // Message history for LLM context (already truncated)
+              "messages": history.messages,
+              "todos": history.todos
+            }
+          });
+          send_to_sidecar(app, state.inner(), &enriched_event)
+        }
+        Ok(None) => {
+          eprintln!("[message.edit] Session {} NOT FOUND in DB!", session_id);
+          send_to_sidecar(app, state.inner(), &event)
+        }
+        Err(e) => {
+          eprintln!("[message.edit] DB error: {}", e);
+          send_to_sidecar(app, state.inner(), &event)
+        }
+      }
+    }
+
+    // session.continue - enrich with session data and messages from DB for sidecar to restore
+    "session.continue" => {
+      let payload = event.get("payload").ok_or_else(|| "[session.continue] missing payload".to_string())?;
+      let session_id = payload.get("sessionId").and_then(|v| v.as_str())
+        .ok_or_else(|| "[session.continue] missing sessionId".to_string())?;
+      
+      eprintln!("[session.continue] Looking up session: {}", session_id);
+      
+      // Get session history from DB to provide full context to sidecar
+      match state.db.get_session_history(session_id) {
+        Ok(Some(history)) => {
+          eprintln!("[session.continue] Found session: title='{}', cwd={:?}, model={:?}, messages={}", 
+            history.session.title, history.session.cwd, history.session.model, history.messages.len());
+          
+          // Enrich the event with session data AND message history
+          let enriched_event = json!({
+            "type": "session.continue",
+            "payload": {
+              "sessionId": session_id,
+              "prompt": payload.get("prompt").and_then(|v| v.as_str()).unwrap_or(""),
+              // Session data for restoration in sidecar
+              "sessionData": {
+                "title": history.session.title,
+                "cwd": history.session.cwd,
+                "model": history.session.model,
+                "allowedTools": history.session.allowed_tools,
+                "temperature": history.session.temperature
+              },
+              // Message history for LLM context
+              "messages": history.messages,
+              "todos": history.todos
+            }
+          });
+          send_to_sidecar(app, state.inner(), &enriched_event)
+        }
+        Ok(None) => {
+          eprintln!("[session.continue] Session {} NOT FOUND in DB!", session_id);
+          // Still forward - sidecar will return "Unknown session"
+          send_to_sidecar(app, state.inner(), &event)
+        }
+        Err(e) => {
+          eprintln!("[session.continue] DB error: {}", e);
+          send_to_sidecar(app, state.inner(), &event)
+        }
+      }
+    }
+
+    // Settings - handled in Rust DB (with fallback to sidecar for migration)
+    "settings.get" => {
+      match state.db.get_api_settings() {
+        Ok(Some(settings)) => {
+          emit_server_event_app(&app, &json!({
+            "type": "settings.loaded",
+            "payload": { "settings": settings }
+          }))?;
+          Ok(())
+        }
+        Ok(None) => {
+          // No settings in DB yet - forward to sidecar (will migrate on save)
+          send_to_sidecar(app, state.inner(), &event)
+        }
+        Err(e) => {
+          eprintln!("[settings.get] DB error: {}, falling back to sidecar", e);
+          send_to_sidecar(app, state.inner(), &event)
+        }
+      }
+    }
+
+    "settings.save" => {
+      let payload = event.get("payload")
+        .ok_or_else(|| "[settings.save] missing payload".to_string())?;
+      let settings: ApiSettings = serde_json::from_value(payload.get("settings").cloned().unwrap_or(Value::Null))
+        .map_err(|e| format!("[settings.save] invalid settings: {}", e))?;
+      
+      state.db.save_api_settings(&settings)
+        .map_err(|e| format!("[settings.save] {}", e))?;
+      
+      emit_server_event_app(&app, &json!({
+        "type": "settings.loaded",
+        "payload": { "settings": settings }
+      }))?;
+      
+      // Also forward to sidecar so it has updated settings in memory
+      send_to_sidecar(app, state.inner(), &event)
+    }
+
+    // LLM Providers - handled in Rust DB (with fallback to sidecar for migration)
+    "llm.providers.get" => {
+      let settings = state.db.get_llm_provider_settings()
+        .map_err(|e| format!("[llm.providers.get] {}", e))?;
+      
+      eprintln!("[llm.providers.get] providers={}, models={}", settings.providers.len(), settings.models.len());
+      
+      // If DB has providers, use them
+      if !settings.providers.is_empty() {
+        let payload = json!({
+          "type": "llm.providers.loaded",
+          "payload": { "settings": settings }
+        });
+        eprintln!("[llm.providers.get] sending: {}", serde_json::to_string(&payload).unwrap_or_default());
+        emit_server_event_app(&app, &payload)?;
+        Ok(())
+      } else {
+        // No providers in DB yet - forward to sidecar (will migrate on save)
+        send_to_sidecar(app, state.inner(), &event)
+      }
+    }
+
+    "llm.providers.save" => {
+      let payload = event.get("payload")
+        .ok_or_else(|| "[llm.providers.save] missing payload".to_string())?;
+      let settings: LLMProviderSettings = serde_json::from_value(payload.get("settings").cloned().unwrap_or(Value::Null))
+        .map_err(|e| format!("[llm.providers.save] invalid settings: {}", e))?;
+      
+      state.db.save_llm_provider_settings(&settings)
+        .map_err(|e| format!("[llm.providers.save] {}", e))?;
+      
+      emit_server_event_app(&app, &json!({
+        "type": "llm.providers.saved",
+        "payload": { "settings": settings }
+      }))?;
+      
+      // Also forward to sidecar so it has updated settings in memory
+      send_to_sidecar(app, state.inner(), &event)
+    }
+
+    // Forward other LLM-related events to sidecar
+    "models.get" | "llm.models.test" | "llm.models.fetch" | "llm.models.check" |
+    "skills.get" | "skills.refresh" | "skills.toggle" | "skills.set-marketplace" |
+    "task.create" | "task.start" | "task.stop" | "task.delete" => {
+      send_to_sidecar(app, state.inner(), &event)
+    }
+
     _ => {
-      // Forward everything else to the Node sidecar.
-      send_to_sidecar(app, sidecar.inner(), &event)
+      // Forward unknown events to sidecar
+      send_to_sidecar(app, state.inner(), &event)
+    }
+  }
+}
+
+fn migrate_json_to_db(db: &Database, user_data_dir: &PathBuf) {
+  // Migrate api-settings.json → DB
+  let api_settings_path = user_data_dir.join("api-settings.json");
+  if api_settings_path.exists() {
+    if let Ok(None) = db.get_api_settings() {
+      // DB is empty, migrate from JSON
+      if let Ok(content) = fs::read_to_string(&api_settings_path) {
+        if let Ok(settings) = serde_json::from_str::<ApiSettings>(&content) {
+          if let Err(e) = db.save_api_settings(&settings) {
+            eprintln!("[migrate] Failed to save api settings: {}", e);
+          } else {
+            eprintln!("[migrate] Migrated api-settings.json to DB");
+          }
+        }
+      }
+    }
+  }
+
+  // Migrate llm-providers-settings.json → DB
+  let llm_providers_path = user_data_dir.join("llm-providers-settings.json");
+  if llm_providers_path.exists() {
+    if let Ok(settings) = db.get_llm_provider_settings() {
+      if settings.providers.is_empty() {
+        // DB is empty, migrate from JSON
+        if let Ok(content) = fs::read_to_string(&llm_providers_path) {
+          if let Ok(json_settings) = serde_json::from_str::<Value>(&content) {
+            // Parse JSON structure
+            let mut providers: Vec<LLMProvider> = Vec::new();
+            let mut models: Vec<LLMModel> = Vec::new();
+            let now = chrono::Utc::now().timestamp_millis();
+
+            if let Some(json_providers) = json_settings.get("providers").and_then(|v| v.as_array()) {
+              for p in json_providers {
+                let id = p.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                if id.is_empty() { continue; }
+
+                providers.push(LLMProvider {
+                  id: id.clone(),
+                  name: p.get("name").and_then(|v| v.as_str()).unwrap_or(&id).to_string(),
+                  provider_type: p.get("type").and_then(|v| v.as_str()).unwrap_or("openai").to_string(),
+                  base_url: p.get("baseUrl").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                  api_key: p.get("apiKey").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                  enabled: p.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
+                  config: None,
+                  created_at: now,
+                  updated_at: now,
+                });
+              }
+            }
+
+            if let Some(json_models) = json_settings.get("models").and_then(|v| v.as_array()) {
+              for m in json_models {
+                let id = m.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                if id.is_empty() { continue; }
+
+                models.push(LLMModel {
+                  id: id.clone(),
+                  provider_id: m.get("providerId").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                  name: m.get("name").and_then(|v| v.as_str()).unwrap_or(&id).to_string(),
+                  enabled: m.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
+                  config: None,
+                });
+              }
+            }
+
+            let migrated_settings = LLMProviderSettings { providers, models };
+            if let Err(e) = db.save_llm_provider_settings(&migrated_settings) {
+              eprintln!("[migrate] Failed to save llm providers: {}", e);
+            } else {
+              eprintln!("[migrate] Migrated llm-providers.json to DB ({} providers, {} models)", 
+                migrated_settings.providers.len(), migrated_settings.models.len());
+            }
+          }
+        }
+      }
     }
   }
 }
 
 fn main() {
+  // Initialize database
+  let user_data_dir = app_data_dir().expect("Failed to get app data dir");
+  fs::create_dir_all(&user_data_dir).expect("Failed to create app data dir");
+  
+  let db_path = user_data_dir.join("sessions.db");
+  let db = Database::new(&db_path).expect("Failed to initialize database");
+
+  // Reset any stale "running" sessions to "idle" on app startup
+  match db.reset_running_sessions() {
+    Ok(count) if count > 0 => eprintln!("[startup] Reset {} stale running sessions to idle", count),
+    Err(e) => eprintln!("[startup] Failed to reset running sessions: {}", e),
+    _ => {}
+  }
+
+  // Migrate JSON settings to DB on first run
+  migrate_json_to_db(&db, &user_data_dir);
+
+  let app_state = AppState {
+    db: Arc::new(db),
+    sidecar: SidecarState::default(),
+  };
+
   tauri::Builder::default()
-    .manage(SidecarState::default())
+    .manage(app_state)
     .invoke_handler(tauri::generate_handler![
       client_event,
       list_directory,
@@ -618,7 +1242,31 @@ fn main() {
       get_build_info,
       select_directory,
       generate_session_title,
-      get_recent_cwds
+      get_recent_cwds,
+      // Code Sandbox commands
+      sandbox_execute_js,
+      sandbox_execute_python,
+      sandbox_execute,
+      // Database commands - Sessions
+      db_session_list,
+      db_session_create,
+      db_session_get,
+      db_session_update,
+      db_session_delete,
+      db_session_history,
+      db_session_pin,
+      db_record_message,
+      db_update_tokens,
+      db_save_todos,
+      db_save_file_changes,
+      // Database commands - Settings & Providers
+      db_get_api_settings,
+      db_save_api_settings,
+      db_get_llm_providers,
+      db_save_llm_providers,
+      db_save_provider,
+      db_delete_provider,
+      db_save_models
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

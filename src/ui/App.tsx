@@ -30,6 +30,7 @@ function App() {
   const [showSessionEditModal, setShowSessionEditModal] = useState(false);
   const [apiSettings, setApiSettings] = useState<ApiSettings | null>(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false); // Track if settings have been loaded from backend
+  const [llmProvidersLoaded, setLlmProvidersLoaded] = useState(false); // Track if LLM providers have been loaded
   const partialUpdateScheduledRef = useRef(false);
   const selectedModel = useAppStore((s) => s.selectedModel);
   const setSelectedModel = useAppStore((s) => s.setSelectedModel);
@@ -120,6 +121,11 @@ function App() {
       setApiSettings(event.payload.settings);
       setSettingsLoaded(true);
     }
+    
+    // Handle LLM providers loaded event
+    if (event.type === "llm.providers.loaded") {
+      setLlmProvidersLoaded(true);
+    }
   }, [handleServerEvent, handlePartialMessages]);
 
   const { connected, sendEvent } = useIPC(onEvent);
@@ -141,8 +147,8 @@ function App() {
 
   // Check if API key or LLM providers are configured on first load
   useEffect(() => {
-    // Wait until settings are loaded from backend
-    if (!settingsLoaded) return;
+    // Wait until both settings AND llm providers are loaded from backend
+    if (!settingsLoaded || !llmProvidersLoaded) return;
     
     // Check if we have any enabled models from LLM providers (enabled !== false)
     const hasEnabledModels = llmModels.some(m => m.enabled !== false);
@@ -174,7 +180,7 @@ function App() {
     } else {
       console.log('[App] Valid API key found');
     }
-  }, [apiSettings, settingsLoaded, llmModels, setShowStartModal]);
+  }, [apiSettings, settingsLoaded, llmProvidersLoaded, llmModels, setShowStartModal]);
 
   useEffect(() => {
     if (!activeSessionId || !connected) return;

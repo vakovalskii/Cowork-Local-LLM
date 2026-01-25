@@ -18,7 +18,8 @@ LocalDesk uses OpenAI-compatible function calling. Each tool is defined with:
 | **File** | `search_text` | Grep-like text search |
 | **File** | `read_document` | Extract text from PDF/DOCX |
 | **File** | `attach_image` | Attach local image for model input |
-| **Code** | `execute_js` | Run JS in WASM sandbox (QuickJS) |
+| **Code** | `execute_js` | Run JS in Node.js vm sandbox |
+| **Code** | `execute_python` | Run Python code (system Python + pip) |
 | **System** | `run_command` | Execute shell commands |
 | **Web** | `search_web` | Internet search (Tavily/Z.AI) |
 | **Web** | `fetch_html` | Fetch URL content |
@@ -37,7 +38,7 @@ LocalDesk uses OpenAI-compatible function calling. Each tool is defined with:
 
 ### 1. Create Tool File
 
-Path: `src/electron/libs/tools/your-tool.ts`
+Path: `src/agent/libs/tools/your-tool.ts`
 
 ```typescript
 import type { ChatCompletionTool } from 'openai/resources/chat/completions';
@@ -86,7 +87,7 @@ export async function executeYourTool(
 
 ### 2. Register Tool
 
-Add to `src/electron/libs/tools/index.ts`:
+Add to `src/agent/libs/tools/index.ts`:
 
 ```typescript
 import { yourToolDefinition, executeYourTool } from './your-tool.js';
@@ -105,7 +106,7 @@ export const TOOL_EXECUTORS = {
 
 ### 3. Add to Tools Executor
 
-Update `src/electron/libs/tools-executor.ts` if tool needs special handling.
+Update `src/agent/libs/tools-executor.ts` if tool needs special handling.
 
 ## Tool Naming Convention
 
@@ -122,25 +123,35 @@ Bad:
 - `file_read` (noun_verb)
 - `readFile` (camelCase)
 
-## Sandbox Limitations (execute_js)
+## Code Sandboxes
 
-The QuickJS WASM sandbox has restrictions:
+### execute_js (Node.js vm sandbox)
 
-**Available**:
+**Available** (globals, no imports needed):
 - `fs.readFileSync`, `fs.writeFileSync`, `fs.readdirSync`, `fs.existsSync`
-- `path.join`, `path.dirname`, `path.basename`, `path.extname`
-- `console.log`, `console.error`
-- `JSON.parse`, `JSON.stringify`
-- `Math.*`, `Date`
+- `path.join`, `path.resolve`, `path.dirname`, `path.basename`, `path.extname`
+- `console.log`, `console.error`, `console.warn`, `console.info`
+- `JSON`, `Math`, `Date`, `Array`, `Object`, `String`, `Number`, `Boolean`, `RegExp`
 - `__dirname` (workspace path)
 
 **NOT Available**:
-- ES modules (`import`/`export`)
-- TypeScript
-- `async`/`await`
-- `fetch`, HTTP requests
-- npm packages
-- `require()`
+- `require()`, `import` - no modules, no npm packages
+- `async`/`await`, `Promise` - no async
+- `setTimeout`, `setInterval` - no timers
+- `fetch` - no network
+
+### execute_python (System subprocess)
+
+**Available**:
+- Full Python 3 standard library
+- ALL pip-installed packages (numpy, pandas, requests, etc.)
+- File I/O within workspace
+- `print()` output captured
+
+**Limitations**:
+- Requires Python 3 on user's system
+- pip packages must be pre-installed (or use bash to install)
+- Runs in workspace directory
 
 ## Tool Permission Modes
 

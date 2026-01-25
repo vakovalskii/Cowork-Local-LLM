@@ -13,6 +13,7 @@ import type {
 } from "../types";
 import { SkillsTab } from "./SkillsTab";
 import { getPlatform } from "../platform";
+import { useAppStore } from "../store/useAppStore";
 
 type SettingsModalProps = {
   onClose: () => void;
@@ -53,11 +54,28 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
   const [showTavilyPassword, setShowTavilyPassword] = useState(false);
   const [showZaiPassword, setShowZaiPassword] = useState(false);
 
-  // LLM Provider settings state
-  const [llmProviders, setLlmProviders] = useState<LLMProvider[]>([]);
-  const [llmModels, setLlmModels] = useState<LLMModel[]>([]);
+  // LLM Provider settings - get from global store
+  const globalLlmProviders = useAppStore((s) => s.llmProviders);
+  const globalLlmModels = useAppStore((s) => s.llmModels);
+  
+  // Local state for editing (initialized from store)
+  const [llmProviders, setLlmProviders] = useState<LLMProvider[]>(globalLlmProviders);
+  const [llmModels, setLlmModels] = useState<LLMModel[]>(globalLlmModels);
   const [llmLoading, setLlmLoading] = useState(false);
   const [llmError, setLlmError] = useState<string | null>(null);
+  
+  // Sync local state when global store updates
+  useEffect(() => {
+    if (globalLlmProviders.length > 0) {
+      setLlmProviders(globalLlmProviders);
+    }
+  }, [globalLlmProviders]);
+  
+  useEffect(() => {
+    if (globalLlmModels.length > 0) {
+      setLlmModels(globalLlmModels);
+    }
+  }, [globalLlmModels]);
 
   // Skills state
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -140,21 +158,13 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
   }, [enableMemory, memoryLoaded, memoryLoading, loadMemoryContent]);
 
   const loadLlmProviders = () => {
+    // Data comes from global store, just trigger refresh
     setLlmLoading(true);
     setLlmError(null);
     getPlatform().sendClientEvent({ type: "llm.providers.get" });
     
-    const unsubscribe = getPlatform().onServerEvent((event) => {
-      if (event.type === "llm.providers.loaded") {
-        const { settings } = event.payload;
-        setLlmProviders(settings.providers);
-        setLlmModels(settings.models);
-        setLlmLoading(false);
-        unsubscribe();
-      }
-    });
-
-    (window as any).__llmProvidersUnsubscribe = unsubscribe;
+    // Loading state will be cleared when global store updates
+    setTimeout(() => setLlmLoading(false), 500);
   };
 
   const fetchProviderModels = async (providerId: string) => {

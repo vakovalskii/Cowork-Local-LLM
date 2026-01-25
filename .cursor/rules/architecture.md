@@ -2,20 +2,20 @@
 
 ## Overview
 
-LocalDesk uses **Tauri** with a **Rust** backend and **Node.js sidecar** for heavy logic.
+LocalDesk uses **Tauri** with a **Rust** backend and **Node.js sidecar** for LLM/tool logic.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                         Tauri                                │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐  │
-│  │ Rust Backend │    │ Node Sidecar │    │   WebView    │  │
-│  │  (main.rs)   │◄──►│  (sidecar/)  │    │  (React UI)  │  │
-│  │              │    │              │    │              │  │
-│  │ - Window mgmt│    │ - LLM Runner │    │ - Chat UI    │  │
-│  │ - File ops   │    │ - Tool Exec  │    │ - Settings   │  │
-│  │ - IPC bridge │    │ - SQLite DB  │    │ - Todo Panel │  │
-│  │ - Native API │    │ - Streaming  │    │ - Zustand    │  │
-│  └──────────────┘    └──────────────┘    └──────────────┘  │
+│                         Tauri App                           │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐   │
+│  │ Rust Backend │    │ Node Sidecar │    │   WebView    │   │
+│  │  (main.rs)   │◄──►│  (sidecar/)  │    │  (React UI)  │   │
+│  │              │    │              │    │              │   │
+│  │ - Window mgmt│    │ - LLM Runner │    │ - Chat UI    │   │
+│  │ - SQLite DB  │    │ - Tool Exec  │    │ - Settings   │   │
+│  │ - IPC bridge │    │ - Streaming  │    │ - Todo Panel │   │
+│  │ - Native API │    │ - Memory     │    │ - Zustand    │   │
+│  └──────────────┘    └──────────────┘    └──────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -30,7 +30,9 @@ LocalDesk uses **Tauri** with a **Rust** backend and **Node.js sidecar** for hea
 ```
 ├── src-tauri/                   # Rust backend (Tauri)
 │   ├── src/
-│   │   └── main.rs             # Entry point, IPC commands
+│   │   ├── main.rs             # Entry point, IPC commands, sidecar mgmt
+│   │   ├── db.rs               # SQLite database (sessions, messages, todos)
+│   │   └── sandbox.rs          # Code execution (JS/Python)
 │   ├── Cargo.toml              # Rust dependencies
 │   ├── tauri.conf.json         # Tauri configuration
 │   └── capabilities/           # Security permissions
@@ -38,20 +40,20 @@ LocalDesk uses **Tauri** with a **Rust** backend and **Node.js sidecar** for hea
 ├── src/
 │   ├── sidecar/                # Node.js sidecar process
 │   │   ├── main.ts             # Sidecar entry point
-│   │   └── protocol.ts         # JSON-RPC protocol
+│   │   ├── protocol.ts         # Event types for Rust ↔ Node
+│   │   └── session-store-memory.ts  # In-memory session state
 │   │
-│   ├── electron/               # Shared logic (used by sidecar)
-│   │   ├── libs/
-│   │   │   ├── runner-openai.ts    # LLM agent loop
-│   │   │   ├── tools-executor.ts   # Tool dispatch
-│   │   │   ├── session-store.ts    # SQLite persistence
-│   │   │   ├── prompt-loader.ts    # System prompt builder
-│   │   │   ├── container/
-│   │   │   │   └── quickjs-sandbox.ts  # WASM JS sandbox
-│   │   │   ├── prompts/
-│   │   │   │   └── system.txt      # System prompt template
-│   │   │   └── tools/              # Tool implementations
-│   │   └── types.ts
+│   ├── agent/                  # Agent logic (used by sidecar)
+│   │   └── libs/
+│   │       ├── runner-openai.ts    # LLM agent loop with streaming
+│   │       ├── tools-executor.ts   # Tool dispatch
+│   │       ├── session-store.ts    # Session state management
+│   │       ├── prompt-loader.ts    # System prompt builder
+│   │       ├── container/
+│   │       │   └── quickjs-sandbox.ts  # JS/Python sandboxes
+│   │       ├── prompts/
+│   │       │   └── system.txt      # System prompt template
+│   │       └── tools/              # Tool implementations
 │   │
 │   └── ui/                     # React frontend (WebView)
 │       ├── main.tsx            # React entry
@@ -75,6 +77,8 @@ LocalDesk uses **Tauri** with a **Rust** backend and **Node.js sidecar** for hea
 | File | Purpose |
 |------|---------|
 | `main.rs` | Entry point, Tauri commands, sidecar management |
+| `db.rs` | SQLite database - sessions, messages, todos, settings |
+| `sandbox.rs` | Code execution sandboxes (unused, logic in sidecar) |
 | `tauri.conf.json` | Window config, bundle settings, permissions |
 | `Cargo.toml` | Rust dependencies |
 
@@ -82,17 +86,19 @@ LocalDesk uses **Tauri** with a **Rust** backend and **Node.js sidecar** for hea
 
 | File | Purpose |
 |------|---------|
-| `main.ts` | Sidecar entry, stdin/stdout JSON protocol |
-| `protocol.ts` | Message types for Rust ↔ Node communication |
+| `main.ts` | Sidecar entry, event routing, session handlers |
+| `protocol.ts` | Event types for Rust ↔ Node communication |
+| `session-store-memory.ts` | In-memory session state (restored from DB on continue) |
 
-### Shared Logic (src/electron/libs/)
+### Agent Logic (src/agent/libs/)
 
 | File | Purpose |
 |------|---------|
-| `runner-openai.ts` | LLM agent loop with streaming |
+| `runner-openai.ts` | LLM agent loop with streaming, tool calls |
 | `tools-executor.ts` | Execute tools, handle permissions |
-| `session-store.ts` | SQLite CRUD for sessions |
+| `session-store.ts` | Session state management |
 | `prompt-loader.ts` | Build system prompt from template |
+| `container/quickjs-sandbox.ts` | JS (vm) and Python (subprocess) sandboxes |
 
 ### React UI (src/ui/)
 
@@ -147,12 +153,17 @@ fn get_build_info() -> Result<BuildInfo, String>
 
 ## Database Schema (SQLite)
 
-Same as before - managed by sidecar:
+Managed by Rust via `rusqlite` in `db.rs`:
 
 ```sql
-sessions (id, title, cwd, model, created_at, updated_at, pinned)
-messages (id, session_id, type, data, created_at)
-todos (id, session_id, todos)
+sessions (id, title, cwd, model, status, allowed_tools, temperature, 
+          input_tokens, output_tokens, is_pinned, created_at, updated_at)
+messages (id, session_id, data, created_at)
+todos (session_id, todos)
+file_changes (session_id, file_changes)
+settings (key, value)
+llm_providers (id, name, type, base_url, api_key, enabled, config, ...)
+llm_models (id, provider_id, name, enabled, config)
 ```
 
 ## Tech Stack
@@ -160,11 +171,13 @@ todos (id, session_id, todos)
 | Layer | Technology |
 |-------|------------|
 | Desktop | **Tauri 2.x** (Rust) |
+| Database | **rusqlite** (SQLite in Rust) |
 | Frontend | React 19, TypeScript |
 | State | Zustand |
 | Styling | Tailwind CSS |
-| Database | better-sqlite3 (via sidecar) |
-| JS Sandbox | quickjs-emscripten (WASM) |
+| Sidecar | Node.js bundled with `pkg` |
+| JS Sandbox | Node.js `vm` module |
+| Python Sandbox | System subprocess |
 | PDF | pdf-parse |
 | DOCX | mammoth |
 | Build | **Vite + cargo tauri build** |

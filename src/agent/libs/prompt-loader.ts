@@ -2,14 +2,37 @@
  * Prompt loader - loads and formats prompts from template files
  */
 
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { generateSkillsPromptSection } from './tools/skills-tool.js';
 
-// Get current directory in ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// Get current directory - handle both ESM and pkg binary
+let __pkg_dirname: string;
+if ((process as any).pkg) {
+  // In pkg binary, use process.execPath directory
+  __pkg_dirname = dirname(process.execPath);
+} else if (typeof import.meta.url !== 'undefined') {
+  // ESM mode
+  __pkg_dirname = dirname(fileURLToPath(import.meta.url));
+} else {
+  // CJS fallback
+  __pkg_dirname = __dirname;
+}
+
+// For macOS .app bundle, prompts are in Resources/ not MacOS/
+function resolvePromptsDir(): string {
+  const macOSPrompts = join(__pkg_dirname, 'prompts');
+  const resourcesPrompts = join(__pkg_dirname, '..', 'Resources', 'prompts');
+  
+  // Check if we're in a macOS .app bundle
+  if (existsSync(resourcesPrompts)) {
+    return resourcesPrompts;
+  }
+  return macOSPrompts;
+}
+
+const __prompts_dir = resolvePromptsDir();
 
 // Detect OS at module load time
 const platform = process.platform;
@@ -53,7 +76,7 @@ const getShellCommands = () => {
  * @param toolsSummary - Dynamic summary of available tools (generated from active tool definitions)
  */
 export function getSystemPrompt(cwd: string, toolsSummary: string = ''): string {
-  const promptPath = join(__dirname, 'prompts', 'system.txt');
+  const promptPath = join(__prompts_dir, 'system.txt');
   let template = readFileSync(promptPath, 'utf-8');
 
   const osName = getOSName();
@@ -84,7 +107,7 @@ export function getSystemPrompt(cwd: string, toolsSummary: string = ''): string 
  * Load initial prompt template and replace placeholders
  */
 export function getInitialPrompt(task: string, memoryContent?: string): string {
-  const promptPath = join(__dirname, 'prompts', 'initial_prompt.txt');
+  const promptPath = join(__prompts_dir, 'initial_prompt.txt');
   let template = readFileSync(promptPath, 'utf-8');
 
   const now = new Date();
