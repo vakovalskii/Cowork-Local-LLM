@@ -32,7 +32,15 @@ ensure-rust:
 	fi
 	@RUST_VERSION=$$(rustc --version | sed 's/rustc \([0-9]*\.[0-9]*\.[0-9]*\).*/\1/'); \
 	MIN_VERSION="$(MIN_RUST_VERSION)"; \
-	if [ "$$(printf '%s\n' "$$MIN_VERSION" "$$RUST_VERSION" | sort -V | head -n1)" != "$$MIN_VERSION" ]; then \
+	RUST_MAJOR=$$(echo $$RUST_VERSION | cut -d. -f1); \
+	RUST_MINOR=$$(echo $$RUST_VERSION | cut -d. -f2); \
+	RUST_PATCH=$$(echo $$RUST_VERSION | cut -d. -f3); \
+	MIN_MAJOR=$$(echo $$MIN_VERSION | cut -d. -f1); \
+	MIN_MINOR=$$(echo $$MIN_VERSION | cut -d. -f2); \
+	MIN_PATCH=$$(echo $$MIN_VERSION | cut -d. -f3); \
+	if [ $$RUST_MAJOR -lt $$MIN_MAJOR ] || \
+	   ([ $$RUST_MAJOR -eq $$MIN_MAJOR ] && [ $$RUST_MINOR -lt $$MIN_MINOR ]) || \
+	   ([ $$RUST_MAJOR -eq $$MIN_MAJOR ] && [ $$RUST_MINOR -eq $$MIN_MINOR ] && [ $$RUST_PATCH -lt $$MIN_PATCH ]); then \
 		echo ""; \
 		echo "❌ ERROR: Rust version $$RUST_VERSION is too old (minimum: $$MIN_VERSION)"; \
 		echo ""; \
@@ -74,12 +82,16 @@ dev-tauri: ensure-tools
 
 dev: dev-sidecar
 	@echo "Starting Vite + Tauri (Node-sidecar)..."
+ifdef OS
+	@node scripts/dev-tauri.cjs
+else
 	@npm run dev:react & \
 	VITE_PID=$$!; \
 	cd src-tauri && LOCALDESK_SIDECAR_ENTRY="$(SIDECAR_ENTRY)" cargo tauri dev; \
 	STATUS=$$?; \
 	kill $$VITE_PID >/dev/null 2>&1 || true; \
 	exit $$STATUS
+endif
 
 bundle: ensure-tools
 	@echo "Building UI..."
