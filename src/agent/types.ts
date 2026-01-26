@@ -38,6 +38,7 @@ export type ApiSettings = {
   enableFetchTools?: boolean; // Enable fetch/fetch_json/download tools
   enableImageTools?: boolean; // Enable attach_image tool
   llmProviders?: LLMProviderSettings; // LLM providers and models configuration
+  roleGroupSettings?: RoleGroupSettings; // Default role group configuration
 };
 
 export type ModelInfo = {
@@ -193,12 +194,36 @@ export interface Skill {
 }
 
 // Task creation types
-export type TaskMode = 'consensus' | 'different_tasks';
+export type TaskMode = 'consensus' | 'different_tasks' | 'role_group';
+
+export type RoleGroupRoleId =
+  | 'product_manager'
+  | 'team_lead'
+  | 'backend_dev'
+  | 'frontend_dev'
+  | 'analyst'
+  | 'qa'
+  | 'devops'
+  | 'architect';
+
+export type RoleGroupRoleConfig = {
+  id: RoleGroupRoleId;
+  name: string;
+  enabled: boolean;
+  model?: string;
+  prompt: string;
+};
+
+export type RoleGroupSettings = {
+  roles: RoleGroupRoleConfig[];
+};
 
 export type ThreadTask = {
   model: string;
   prompt: string;
   threadId?: string; // Assigned after creation
+  roleId?: RoleGroupRoleId;
+  roleName?: string;
 };
 
 export type CreateTaskPayload = {

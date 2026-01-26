@@ -9,11 +9,13 @@ import type {
   LLMModel,
   LLMProviderSettings,
   LLMProviderType,
+  RoleGroupSettings,
   Skill
 } from "../types";
 import { SkillsTab } from "./SkillsTab";
 import { getPlatform } from "../platform";
 import { useAppStore } from "../store/useAppStore";
+import { getRoleGroupSettings } from "../role-group";
 
 type SettingsModalProps = {
   onClose: () => void;
@@ -21,7 +23,8 @@ type SettingsModalProps = {
   currentSettings: ApiSettings | null;
 };
 
-type TabId = 'llm-models' | 'web-tools' | 'tools' | 'skills' | 'memory-mode';
+type TabId = 'llm-models' | 'web-tools' | 'tools' | 'skills' | 'roles' | 'memory-mode';
+type RoleModelOption = { id: string; name: string; description?: string };
 
 export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<TabId>('llm-models');
@@ -53,6 +56,9 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
   const [memoryLoading, setMemoryLoading] = useState(false);
   const [showTavilyPassword, setShowTavilyPassword] = useState(false);
   const [showZaiPassword, setShowZaiPassword] = useState(false);
+  const [roleGroupSettings, setRoleGroupSettings] = useState<RoleGroupSettings>(
+    () => getRoleGroupSettings(currentSettings)
+  );
 
   // LLM Provider settings - get from global store
   const globalLlmProviders = useAppStore((s) => s.llmProviders);
@@ -133,6 +139,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       setEnableFetchTools(currentSettings.enableFetchTools || false);
       setEnableImageTools(currentSettings.enableImageTools ?? false);
     }
+    setRoleGroupSettings(getRoleGroupSettings(currentSettings));
     
     // ALWAYS load LLM providers from separate file
     console.log('[SettingsModal] Loading LLM providers from file...');
@@ -293,7 +300,8 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       enableDuckDuckGo,
       enableFetchTools,
       enableImageTools,
-      llmProviders: llmProviderSettings
+      llmProviders: llmProviderSettings,
+      roleGroupSettings
     };
     
     console.log('[SettingsModal] Full settings to save:', settingsToSave);
@@ -332,6 +340,7 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
     setEnableDuckDuckGo(false);
     setEnableFetchTools(false);
     setEnableImageTools(false);
+    setRoleGroupSettings(getRoleGroupSettings(null));
   };
 
   useEffect(() => {
@@ -344,6 +353,20 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
       }
     };
   }, []);
+
+  const roleModelOptions: RoleModelOption[] = (() => {
+    const enabledModels = llmModels.filter(m => m.enabled);
+    if (enabledModels.length === 0) return [];
+    return enabledModels.map(modelOption => {
+      const provider = llmProviders.find(p => p.id === modelOption.providerId);
+      const providerLabel = provider?.name || modelOption.providerType;
+      return {
+        id: modelOption.id,
+        name: modelOption.name,
+        description: `${providerLabel} | ${modelOption.description || ''}`.trim()
+      };
+    });
+  })();
 
   return (
     <Dialog.Root open onOpenChange={onClose}>
@@ -396,6 +419,16 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
               }`}
             >
               Skills
+            </button>
+            <button
+              onClick={() => setActiveTab('roles')}
+              className={`px-5 py-3 text-sm font-medium transition-colors whitespace-nowrap ${
+                activeTab === 'roles'
+                  ? 'text-ink-900 border-b-2 border-accent'
+                  : 'text-ink-600 hover:text-ink-900'
+              }`}
+            >
+              Roles
             </button>
             <button
               onClick={() => setActiveTab('memory-mode')}
@@ -471,6 +504,13 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
                   onSetMarketplaceUrl={setMarketplaceUrl}
                 />
               </div>
+            ) : activeTab === 'roles' ? (
+              <RolesTab
+                roleGroupSettings={roleGroupSettings}
+                setRoleGroupSettings={setRoleGroupSettings}
+                modelOptions={roleModelOptions}
+                defaultModel={model}
+              />
             ) : (
               <MemoryModeTab
                 enableMemory={enableMemory}
@@ -509,6 +549,107 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+function RolesTab({
+  roleGroupSettings,
+  setRoleGroupSettings,
+  modelOptions,
+  defaultModel
+}: {
+  roleGroupSettings: RoleGroupSettings;
+  setRoleGroupSettings: (settings: RoleGroupSettings) => void;
+  modelOptions: RoleModelOption[];
+  defaultModel: string;
+}) {
+  const updateRole = (roleId: RoleGroupSettings["roles"][number]["id"], updates: Partial<RoleGroupSettings["roles"][number]>) => {
+    setRoleGroupSettings({
+      roles: roleGroupSettings.roles.map(role =>
+        role.id === roleId ? { ...role, ...updates } : role
+      )
+    });
+  };
+
+  const handleResetDefaults = () => {
+    setRoleGroupSettings(getRoleGroupSettings(null));
+  };
+
+  return (
+    <div className="px-6 py-4 space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-medium text-ink-900">Role Group Defaults</h3>
+          <p className="text-xs text-muted">
+            Used when creating Role Group tasks.
+          </p>
+        </div>
+        <button
+          onClick={handleResetDefaults}
+          className="px-3 py-2 text-xs font-medium text-ink-600 bg-ink-100 rounded-lg hover:bg-ink-200 transition-colors"
+        >
+          Reset Defaults
+        </button>
+      </div>
+
+      <div className="space-y-3">
+        {roleGroupSettings.roles.map((role) => (
+          <div key={role.id} className="rounded-xl border border-ink-900/10 bg-surface p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={role.enabled}
+                  onChange={(event) => updateRole(role.id, { enabled: event.target.checked })}
+                  className="h-4 w-4 rounded border-ink-900/20 text-accent focus:ring-accent/40"
+                />
+                <div>
+                  <div className="text-sm font-medium text-ink-900">{role.name}</div>
+                  <div className="text-[11px] text-muted">{role.id}</div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-muted">Model</span>
+                {modelOptions.length > 0 ? (
+                  <select
+                    value={role.model || ""}
+                    onChange={(event) => updateRole(role.id, { model: event.target.value })}
+                    className="min-w-[220px] rounded-lg border border-ink-900/10 bg-surface-secondary px-3 py-2 text-xs text-ink-800 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/20"
+                  >
+                    <option value="">
+                      {defaultModel ? `Default (${defaultModel})` : "Default model"}
+                    </option>
+                    {modelOptions.map(option => (
+                      <option key={option.id} value={option.id}>
+                        {option.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    value={role.model || ""}
+                    onChange={(event) => updateRole(role.id, { model: event.target.value })}
+                    placeholder={defaultModel || "Model id"}
+                    className="min-w-[220px] rounded-lg border border-ink-900/10 bg-surface-secondary px-3 py-2 text-xs text-ink-800 placeholder:text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/20"
+                  />
+                )}
+              </div>
+            </div>
+
+            <div className="mt-3 grid gap-1.5">
+              <span className="text-xs font-medium text-muted">Role Prompt</span>
+              <textarea
+                value={role.prompt}
+                onChange={(event) => updateRole(role.id, { prompt: event.target.value })}
+                rows={3}
+                className="w-full rounded-lg border border-ink-900/10 bg-surface-secondary px-3 py-2 text-xs text-ink-800 placeholder:text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/20"
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
