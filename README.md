@@ -88,89 +88,53 @@ vllm serve Qwen/Qwen2.5-14B-Instruct --port 8000
 
 ## 🚀 Quick Start
 
-### Tauri edition 
+### Prerequisites
 
-```
-git clone https://github.com/vakovalskii/LocalDesk.git 
-make dev 
-```
-for stand-alone binary
-```
-make bundle 
-```
+- **Rust** 1.74+ ([install](https://rustup.rs/))
+- **Node.js** 20+ 
+- **Python 3** (for `execute_python` tool)
 
-### Legacy Electron Installation (Windows):
+### Development (macOS/Linux)
 
-```powershell
-# Clone the repository
+```bash
+# Clone and enter
 git clone https://github.com/vakovalskii/LocalDesk.git
 cd LocalDesk
 
 # Install dependencies
 npm install
 
-# Run in development mode (single terminal)
-npm run dev:win
+# Run in development mode
+make dev
 ```
 
-> **Notes:**
-> - First run may take 10-15 seconds while dependencies compile. Subsequent runs will be faster.
-> - **To stop:** Press `Ctrl+C` twice to fully terminate both processes (first Ctrl+C sends graceful shutdown, second forces termination).
-
-**Alternative Legacy Electron: Manual mode (2 terminals)**
-
-Terminal 1 - Start Vite dev server:
-```powershell
-npm run dev:react
-```
-
-Terminal 2 - Start Electron (wait 5-10 seconds):
-```powershell
-npm run transpile:electron
-cross-env NODE_ENV=development npx electron .
-```
-
-**Production mode:**
-```powershell
-npm run build
-npx electron .
-```
-
-### Installation (macOS/Linux - npm)
+### Build Standalone App
 
 ```bash
-# Clone the repository
-git clone https://github.com/vakovalskii/LocalDesk.git
-cd LocalDesk
+# Build DMG (macOS)
+make bundle
 
-# Install dependencies
-npm install
-
-# Rebuild native modules for Electron
-npx electron-rebuild -f -w better-sqlite3
-
-# Run in development mode
-npm run dev
+# Output: LocalDesk-0.0.7.dmg
 ```
 
-### Installation (macOS/Linux - bun) ⚡
+### Manual Build Steps
 
 ```bash
-# Clone the repository
-git clone https://github.com/vakovalskii/LocalDesk.git
-cd LocalDesk
+# 1. Build sidecar binary
+npm run build:sidecar
 
-# Install dependencies (faster)
-bun install
+# 2. Build Tauri app
+cd src-tauri && cargo build --release
 
-# Rebuild native modules for Electron
-bunx electron-rebuild -f -w better-sqlite3
-
-# Run in development mode
-bun run dev
+# 3. Create DMG
+hdiutil create -volname "LocalDesk" \
+  -srcfolder src-tauri/target/release/bundle/macos/LocalDesk.app \
+  -ov -format UDZO LocalDesk-0.0.7.dmg
 ```
 
-> **Note:** Bun is significantly faster for dependency installation (~3x speedup)
+### Windows (coming soon)
+
+Windows build requires cross-compilation setup. Check `.github/workflows/` for CI builds.
 
 ### Configuration
 
