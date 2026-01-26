@@ -16,9 +16,13 @@ const MEMORY_FILE = 'memory.md';
 
 /**
  * Get memory file path.
- * Always uses global ~/.localdesk/memory.md (user-level, not project-specific)
+ * If cwd is provided, use {cwd}/.localdesk/memory.md (workspace-local)
+ * Otherwise, use global ~/.localdesk/memory.md
  */
-function getMemoryPath(_cwd?: string): string {
+function getMemoryPath(cwd?: string): string {
+  if (cwd && cwd.trim()) {
+    return join(cwd, LOCALDESK_DIR, MEMORY_FILE);
+  }
   return join(homedir(), LOCALDESK_DIR, MEMORY_FILE);
 }
 
@@ -29,8 +33,8 @@ export const MemoryToolDefinition = {
     description: `Manage long-term memory by storing important information in memory.md file.
     
 Memory storage:
-- Memory is stored globally in ~/.localdesk/memory.md (persists across all projects)
-- This is user-level memory, not project-specific
+- **Workspace mode**: If a working directory is set, memory is stored in {cwd}/.localdesk/memory.md (project-specific)
+- **Global mode**: Otherwise, memory is stored in ~/.localdesk/memory.md (persists across all projects)
 
 **BE PROACTIVE**: You should automatically remember important information even if not explicitly asked:
 
@@ -97,6 +101,7 @@ export async function executeMemoryTool(
 ): Promise<{ success: boolean; output?: string; error?: string }> {
   try {
     const memoryPath = getMemoryPath(context.cwd);
+    const isWorkspaceLocal = context.cwd && context.cwd.trim() ? true : false;
     
     switch (args.operation) {
       case 'create': {
@@ -111,13 +116,14 @@ export async function executeMemoryTool(
         await mkdir(dir, { recursive: true });
         
         const timestamp = new Date().toISOString().split('T')[0];
-        const formattedContent = `# Memory\n\nCreated: ${timestamp}\n\n---\n\n${args.content}\n`;
+        const memoryType = isWorkspaceLocal ? 'workspace' : 'global';
+        const formattedContent = `# Memory (${memoryType})\n\nCreated: ${timestamp}\n\n---\n\n${args.content}\n`;
         
         await writeFile(memoryPath, formattedContent, 'utf-8');
         
         return {
           success: true,
-          output: `Memory file created: ${memoryPath}\n\nContent:\n${formattedContent}`
+          output: `Memory file created (${memoryType}): ${memoryPath}\n\nContent:\n${formattedContent}`
         };
       }
       
@@ -140,7 +146,8 @@ export async function executeMemoryTool(
           if (error.code === 'ENOENT') {
             // File doesn't exist, create it first
             const timestamp = new Date().toISOString().split('T')[0];
-            existingContent = `# Memory\n\nCreated: ${timestamp}\n\n---\n\n`;
+            const memoryType = isWorkspaceLocal ? 'workspace' : 'global';
+            existingContent = `# Memory (${memoryType})\n\nCreated: ${timestamp}\n\n---\n\n`;
           } else {
             throw error;
           }
@@ -151,9 +158,10 @@ export async function executeMemoryTool(
         
         await writeFile(memoryPath, newContent, 'utf-8');
         
+        const memoryType = isWorkspaceLocal ? 'workspace' : 'global';
         return {
           success: true,
-          output: `Added to memory: ${memoryPath}\n\nNew entry:\n${args.content}`
+          output: `Added to ${memoryType} memory: ${memoryPath}\n\nNew entry:\n${args.content}`
         };
       }
       
@@ -214,19 +222,20 @@ export async function executeMemoryTool(
       }
       
       case 'read': {
+        const memoryType = isWorkspaceLocal ? 'workspace' : 'global';
         try {
           await access(memoryPath, constants.F_OK);
           const content = await readFile(memoryPath, 'utf-8');
           
           return {
             success: true,
-            output: `Current memory (${memoryPath}):\n\n${content}`
+            output: `Current ${memoryType} memory (${memoryPath}):\n\n${content}`
           };
         } catch (error: any) {
           if (error.code === 'ENOENT') {
             return {
               success: true,
-              output: `No memory file exists yet. Use create or append to start building memory.`
+              output: `No ${memoryType} memory file exists yet. Use create or append to start building memory.`
             };
           }
           throw error;
