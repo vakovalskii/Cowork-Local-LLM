@@ -12,6 +12,7 @@ import type {
   Skill
 } from "../types";
 import { SkillsTab } from "./SkillsTab";
+import { SchedulerTab } from "./SchedulerTab";
 import { getPlatform } from "../platform";
 import { useAppStore } from "../store/useAppStore";
 
@@ -21,7 +22,7 @@ type SettingsModalProps = {
   currentSettings: ApiSettings | null;
 };
 
-type TabId = 'llm-models' | 'web-tools' | 'tools' | 'skills' | 'memory-mode';
+type TabId = 'llm-models' | 'web-tools' | 'tools' | 'skills' | 'scheduler' | 'memory-mode';
 
 export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<TabId>('llm-models');
@@ -398,6 +399,16 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
               Skills
             </button>
             <button
+              onClick={() => setActiveTab('scheduler')}
+              className={`px-5 py-3 text-sm font-medium transition-colors whitespace-nowrap ${
+                activeTab === 'scheduler'
+                  ? 'text-ink-900 border-b-2 border-accent'
+                  : 'text-ink-600 hover:text-ink-900'
+              }`}
+            >
+              Scheduler
+            </button>
+            <button
               onClick={() => setActiveTab('memory-mode')}
               className={`px-5 py-3 text-sm font-medium transition-colors whitespace-nowrap ${
                 activeTab === 'memory-mode'
@@ -470,6 +481,10 @@ export function SettingsModal({ onClose, onSave, currentSettings }: SettingsModa
                   onRefresh={refreshSkills}
                   onSetMarketplaceUrl={setMarketplaceUrl}
                 />
+              </div>
+            ) : activeTab === 'scheduler' ? (
+              <div className="p-6">
+                <SchedulerTab />
               </div>
             ) : (
               <MemoryModeTab

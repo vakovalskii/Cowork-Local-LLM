@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ServerEvent, SessionStatus, StreamMessage, TodoItem, FileChange, MultiThreadTask, LLMModel, LLMProvider, LLMProviderSettings } from "../types";
+import type { ServerEvent, SessionStatus, StreamMessage, TodoItem, FileChange, MultiThreadTask, LLMModel, LLMProvider, LLMProviderSettings, ScheduledTask } from "../types";
 import { getPlatform } from "../platform";
 
 export type PermissionRequest = {
@@ -53,6 +53,7 @@ interface AppState {
   llmProviders: LLMProvider[];
   llmModels: LLMModel[];
   llmProviderSettings: LLMProviderSettings | null;
+  scheduledTasks: ScheduledTask[];
 
   setPrompt: (prompt: string) => void;
   setCwd: (cwd: string) => void;
@@ -74,6 +75,7 @@ interface AppState {
   setLLMProviders: (providers: LLMProvider[]) => void;
   setLLMModels: (models: LLMModel[]) => void;
   setLLMProviderSettings: (settings: LLMProviderSettings) => void;
+  setScheduledTasks: (tasks: ScheduledTask[]) => void;
 }
 
 function createSession(id: string): SessionView {
@@ -99,6 +101,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   llmProviders: [],
   llmModels: [],
   llmProviderSettings: null,
+  scheduledTasks: [],
 
   setPrompt: (prompt) => set({ prompt }),
   setCwd: (cwd) => set({ cwd }),
@@ -128,6 +131,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setLLMProviders: (llmProviders) => set({ llmProviders }),
   setLLMModels: (llmModels) => set({ llmModels }),
   setLLMProviderSettings: (llmProviderSettings) => set({ llmProviderSettings }),
+  setScheduledTasks: (scheduledTasks) => set({ scheduledTasks }),
   deleteMultiThreadTask: (taskId) => {
     set((state) => {
       const nextTasks = { ...state.multiThreadTasks };
@@ -557,6 +561,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       case "llm.models.checked": {
         const { unavailableModels } = event.payload;
         console.log('[AppStore] LLM models checked, unavailable:', unavailableModels);
+        break;
+      }
+
+      case "scheduler.tasks.loaded": {
+        const { tasks } = event.payload;
+        set({ scheduledTasks: tasks });
+        console.log('[AppStore] Scheduled tasks loaded:', tasks);
         break;
       }
     }

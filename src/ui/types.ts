@@ -116,6 +116,20 @@ export type MultiThreadTask = {
   summaryThreadId?: string;  // ID of summary thread if created
 };
 
+// Scheduled task types (scheduler/reminders)
+export type ScheduledTask = {
+  id: string;
+  title: string;
+  prompt?: string;
+  schedule: string;
+  nextRun: number;
+  isRecurring: boolean;
+  notifyBefore?: number;
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
+
 export type WebSearchProvider = 'tavily' | 'zai';
 
 export type ZaiApiUrl = 'default' | 'coding';
@@ -211,7 +225,9 @@ export type ServerEvent =
   | { type: "llm.models.checked"; payload: { unavailableModels: string[] } }
   // Skills events
   | { type: "skills.loaded"; payload: { skills: Skill[]; marketplaceUrl: string; lastFetched?: number } }
-  | { type: "skills.error"; payload: { message: string } };
+  | { type: "skills.error"; payload: { message: string } }
+  // Scheduler events
+  | { type: "scheduler.tasks.loaded"; payload: { tasks: ScheduledTask[] } };
 
 // Client -> Server events
 export type ClientEvent =
@@ -246,4 +262,9 @@ export type ClientEvent =
   | { type: "skills.get" }
   | { type: "skills.refresh" }
   | { type: "skills.toggle"; payload: { skillId: string; enabled: boolean } }
-  | { type: "skills.set-marketplace"; payload: { url: string } };
+  | { type: "skills.set-marketplace"; payload: { url: string } }
+  // Scheduler events
+  | { type: "scheduler.tasks.get" }
+  | { type: "scheduler.task.create"; payload: Omit<ScheduledTask, 'createdAt' | 'updatedAt'> }
+  | { type: "scheduler.task.update"; payload: { id: string; title?: string; prompt?: string; schedule?: string; nextRun?: number; isRecurring?: boolean; enabled?: boolean } }
+  | { type: "scheduler.task.delete"; payload: { id: string } };

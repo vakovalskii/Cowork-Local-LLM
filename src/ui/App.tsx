@@ -142,6 +142,7 @@ function App() {
       sendEvent({ type: "settings.get" });
       sendEvent({ type: "models.get" });
       sendEvent({ type: "llm.providers.get" });
+      sendEvent({ type: "scheduler.tasks.get" });
     }
   }, [connected, sendEvent]);
 

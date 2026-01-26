@@ -1126,6 +1126,87 @@ fn client_event(app: tauri::AppHandle, state: tauri::State<'_, AppState>, event:
       send_to_sidecar(app, state.inner(), &event)
     }
 
+    // Scheduler - handled in Rust DB
+    "scheduler.task.create" => {
+      let payload = event.get("payload")
+        .ok_or_else(|| "[scheduler.task.create] missing payload".to_string())?;
+      
+      let task: db::ScheduledTask = serde_json::from_value(payload.clone())
+        .map_err(|e| format!("[scheduler.task.create] invalid task: {}", e))?;
+      
+      state.db.create_scheduled_task(&task)
+        .map_err(|e| format!("[scheduler.task.create] {}", e))?;
+      
+      let tasks = state.db.list_scheduled_tasks()
+        .map_err(|e| format!("[scheduler.task.create] list: {}", e))?;
+      
+      emit_server_event_app(&app, &json!({
+        "type": "scheduler.tasks.loaded",
+        "payload": { "tasks": tasks }
+      }))?;
+      
+      Ok(())
+    }
+
+    "scheduler.tasks.get" => {
+      let tasks = state.db.list_scheduled_tasks()
+        .map_err(|e| format!("[scheduler.tasks.get] {}", e))?;
+      
+      emit_server_event_app(&app, &json!({
+        "type": "scheduler.tasks.loaded",
+        "payload": { "tasks": tasks }
+      }))?;
+      
+      Ok(())
+    }
+
+    "scheduler.task.update" => {
+      let payload = event.get("payload")
+        .ok_or_else(|| "[scheduler.task.update] missing payload".to_string())?;
+      
+      let task_id = payload.get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "[scheduler.task.update] missing id".to_string())?;
+      
+      let updates: db::UpdateScheduledTaskParams = serde_json::from_value(payload.clone())
+        .map_err(|e| format!("[scheduler.task.update] invalid updates: {}", e))?;
+      
+      state.db.update_scheduled_task(task_id, &updates)
+        .map_err(|e| format!("[scheduler.task.update] {}", e))?;
+      
+      let tasks = state.db.list_scheduled_tasks()
+        .map_err(|e| format!("[scheduler.task.update] list: {}", e))?;
+      
+      emit_server_event_app(&app, &json!({
+        "type": "scheduler.tasks.loaded",
+        "payload": { "tasks": tasks }
+      }))?;
+      
+      Ok(())
+    }
+
+    "scheduler.task.delete" => {
+      let payload = event.get("payload")
+        .ok_or_else(|| "[scheduler.task.delete] missing payload".to_string())?;
+      
+      let task_id = payload.get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "[scheduler.task.delete] missing id".to_string())?;
+      
+      state.db.delete_scheduled_task(task_id)
+        .map_err(|e| format!("[scheduler.task.delete] {}", e))?;
+      
+      let tasks = state.db.list_scheduled_tasks()
+        .map_err(|e| format!("[scheduler.task.delete] list: {}", e))?;
+      
+      emit_server_event_app(&app, &json!({
+        "type": "scheduler.tasks.loaded",
+        "payload": { "tasks": tasks }
+      }))?;
+      
+      Ok(())
+    }
+
     _ => {
       // Forward unknown events to sidecar
       send_to_sidecar(app, state.inner(), &event)
