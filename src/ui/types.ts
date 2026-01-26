@@ -215,7 +215,8 @@ export type ServerEvent =
   // Scheduler events
   | { type: "scheduler.notification"; payload: { title: string; body: string } }
   | { type: "scheduler.task_execute"; payload: { taskId: string; title: string; prompt?: string } }
-  | { type: "scheduler.default_model.loaded"; payload: { modelId: string | null } };
+  | { type: "scheduler.default_model.loaded"; payload: { modelId: string | null } }
+  | { type: "scheduler.default_temperature.loaded"; payload: { temperature: number; sendTemperature: boolean } };
 
 // Client -> Server events
 export type ClientEvent =
@@ -253,4 +254,6 @@ export type ClientEvent =
   | { type: "skills.set-marketplace"; payload: { url: string } }
   // Scheduler events
   | { type: "scheduler.default_model.get" }
-  | { type: "scheduler.default_model.set"; payload: { modelId: string } };
+  | { type: "scheduler.default_model.set"; payload: { modelId: string } }
+  | { type: "scheduler.default_temperature.get" }
+  | { type: "scheduler.default_temperature.set"; payload: { temperature: number; sendTemperature: boolean } };

@@ -43,6 +43,8 @@ export function StartSessionModal({
 }: StartSessionModalProps) {
   const llmProviders = useAppStore((s) => s.llmProviders);
   const schedulerDefaultModel = useAppStore((s) => s.schedulerDefaultModel);
+  const schedulerDefaultTemperature = useAppStore((s) => s.schedulerDefaultTemperature);
+  const schedulerDefaultSendTemperature = useAppStore((s) => s.schedulerDefaultSendTemperature);
   const [recentCwds, setRecentCwds] = useState<string[]>([]);
   const [modelSearch, setModelSearch] = useState('');
 
@@ -98,6 +100,16 @@ export function StartSessionModal({
       }
     }
   }, [apiSettings, selectedModel, onModelChange, schedulerDefaultModel]);
+
+  // Set default temperature from scheduler defaults
+  useEffect(() => {
+    if (schedulerDefaultTemperature !== null) {
+      onTemperatureChange(schedulerDefaultTemperature);
+    }
+    if (schedulerDefaultSendTemperature !== null && onSendTemperatureChange) {
+      onSendTemperatureChange(schedulerDefaultSendTemperature);
+    }
+  }, [schedulerDefaultTemperature, schedulerDefaultSendTemperature, onTemperatureChange, onSendTemperatureChange]);
 
   const handleSelectDirectory = async () => {
     const result = await getPlatform().selectDirectory();

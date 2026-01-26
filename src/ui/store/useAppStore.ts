@@ -54,6 +54,8 @@ interface AppState {
   llmModels: LLMModel[];
   llmProviderSettings: LLMProviderSettings | null;
   schedulerDefaultModel: string | null;
+  schedulerDefaultTemperature: number | null;
+  schedulerDefaultSendTemperature: boolean | null;
 
   setPrompt: (prompt: string) => void;
   setCwd: (cwd: string) => void;
@@ -101,6 +103,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   llmModels: [],
   llmProviderSettings: null,
   schedulerDefaultModel: null,
+  schedulerDefaultTemperature: null,
+  schedulerDefaultSendTemperature: null,
 
   setPrompt: (prompt) => set({ prompt }),
   setCwd: (cwd) => set({ cwd }),
@@ -566,6 +570,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       case "scheduler.default_model.loaded": {
         const { modelId } = event.payload;
         set({ schedulerDefaultModel: modelId });
+        break;
+      }
+
+      // Scheduler default temperature loaded
+      case "scheduler.default_temperature.loaded": {
+        const { temperature, sendTemperature } = event.payload;
+        set({
+          schedulerDefaultTemperature: temperature,
+          schedulerDefaultSendTemperature: sendTemperature
+        });
         break;
       }
 

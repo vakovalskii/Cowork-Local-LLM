@@ -148,6 +148,7 @@ function App() {
       sendEvent({ type: "models.get" });
       sendEvent({ type: "llm.providers.get" });
       sendEvent({ type: "scheduler.default_model.get" });
+      sendEvent({ type: "scheduler.default_temperature.get" });
     }
   }, [connected, sendEvent]);
 

@@ -1324,15 +1324,55 @@ fn client_event(app: tauri::AppHandle, state: tauri::State<'_, AppState>, event:
         .ok_or_else(|| "[scheduler.default_model.set] missing payload".to_string())?;
       let model_id = payload.get("modelId").and_then(|v| v.as_str())
         .ok_or_else(|| "[scheduler.default_model.set] missing modelId".to_string())?;
-      
+
       state.db.set_scheduler_default_model(model_id)
         .map_err(|e| format!("[scheduler.default_model.set] {}", e))?;
-      
+
       eprintln!("[scheduler] Default model set: {}", model_id);
-      
+
       emit_server_event_app(&app, &json!({
         "type": "scheduler.default_model.loaded",
         "payload": { "modelId": model_id }
+      }))?;
+      Ok(())
+    }
+
+    // Scheduler default temperature
+    "scheduler.default_temperature.get" => {
+      let temperature = state.db.get_setting("scheduler_default_temperature")
+        .map_err(|e| format!("[scheduler.default_temperature.get] {}", e))?
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or(0.3);
+      let send_temperature = state.db.get_setting("scheduler_default_send_temperature")
+        .map_err(|e| format!("[scheduler.default_temperature.get] {}", e))?
+        .map(|s| s == "true")
+        .unwrap_or(true);
+
+      emit_server_event_app(&app, &json!({
+        "type": "scheduler.default_temperature.loaded",
+        "payload": { "temperature": temperature, "sendTemperature": send_temperature }
+      }))?;
+      Ok(())
+    }
+
+    "scheduler.default_temperature.set" => {
+      let payload = event.get("payload")
+        .ok_or_else(|| "[scheduler.default_temperature.set] missing payload".to_string())?;
+      let temperature = payload.get("temperature").and_then(|v| v.as_f64())
+        .ok_or_else(|| "[scheduler.default_temperature.set] missing temperature".to_string())?;
+      let send_temperature = payload.get("sendTemperature").and_then(|v| v.as_bool())
+        .unwrap_or(true);
+
+      state.db.set_setting("scheduler_default_temperature", &temperature.to_string())
+        .map_err(|e| format!("[scheduler.default_temperature.set] {}", e))?;
+      state.db.set_setting("scheduler_default_send_temperature", &send_temperature.to_string())
+        .map_err(|e| format!("[scheduler.default_temperature.set] {}", e))?;
+
+      eprintln!("[scheduler] Default temperature set: {} (send: {})", temperature, send_temperature);
+
+      emit_server_event_app(&app, &json!({
+        "type": "scheduler.default_temperature.loaded",
+        "payload": { "temperature": temperature, "sendTemperature": send_temperature }
       }))?;
       Ok(())
     }
