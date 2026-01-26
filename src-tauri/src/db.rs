@@ -606,8 +606,14 @@ pub struct LLMProvider {
     pub enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config: Option<serde_json::Value>,
+    #[serde(default = "default_timestamp")]
     pub created_at: i64,
+    #[serde(default = "default_timestamp")]
     pub updated_at: i64,
+}
+
+fn default_timestamp() -> i64 {
+    chrono::Utc::now().timestamp_millis()
 }
 
 fn default_true() -> bool { true }
@@ -854,6 +860,38 @@ impl Database {
     }
 
     pub fn save_llm_provider_settings(&self, settings: &LLMProviderSettings) -> SqliteResult<()> {
+        let conn = self.conn.lock().unwrap();
+        
+        // Get IDs of providers to keep
+        let provider_ids: Vec<&str> = settings.providers.iter().map(|p| p.id.as_str()).collect();
+        
+        // Delete providers not in the new list
+        if !provider_ids.is_empty() {
+            let placeholders: Vec<String> = (1..=provider_ids.len()).map(|i| format!("?{}", i)).collect();
+            let sql = format!("DELETE FROM providers WHERE id NOT IN ({})", placeholders.join(", "));
+            let params: Vec<&dyn rusqlite::ToSql> = provider_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+            conn.execute(&sql, params.as_slice())?;
+        } else {
+            // No providers - delete all
+            conn.execute("DELETE FROM providers", [])?;
+        }
+        
+        // Get IDs of models to keep
+        let model_ids: Vec<&str> = settings.models.iter().map(|m| m.id.as_str()).collect();
+        
+        // Delete models not in the new list
+        if !model_ids.is_empty() {
+            let placeholders: Vec<String> = (1..=model_ids.len()).map(|i| format!("?{}", i)).collect();
+            let sql = format!("DELETE FROM models WHERE id NOT IN ({})", placeholders.join(", "));
+            let params: Vec<&dyn rusqlite::ToSql> = model_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+            conn.execute(&sql, params.as_slice())?;
+        } else {
+            // No models - delete all
+            conn.execute("DELETE FROM models", [])?;
+        }
+        
+        drop(conn); // Release lock before calling other methods
+        
         // Save providers
         for provider in &settings.providers {
             self.save_provider(provider)?;
