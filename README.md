@@ -2,7 +2,7 @@
 
 # ValeDesk
 
-**Very Almost Local, Eventually Reasonable Assistant**
+**Versatile Almost Local, Eventually Reasonable Assistant**
 
 [![Version](https://img.shields.io/badge/version-0.0.8-blue.svg)](https://github.com/vakovalskii/ValeDesk/releases)
 [![Platform](https://img.shields.io/badge/platform-%20Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/vakovalskii/ValeDesk)
