@@ -22,6 +22,8 @@ import type {
   ToolResult,
   ToolExecutionContext,
 } from "./base-tool.js";
+import { mkdirSync } from "fs";
+import { dirname, isAbsolute, resolve } from "path";
 
 // Playwright will be dynamically imported to avoid errors if not installed
 let playwright: any = null;
@@ -633,8 +635,9 @@ export async function executeBrowserScreenshotTool(
   context: ToolExecutionContext,
 ): Promise<ToolResult> {
   const { path, full_page = false } = args;
+  const resolvedPath = isAbsolute(path) ? path : resolve(context.cwd, path);
 
-  if (!context.isPathSafe(path)) {
+  if (!context.isPathSafe(resolvedPath)) {
     return {
       success: false,
       error: `Access denied: Path is outside the working directory (${context.cwd})`,
@@ -643,11 +646,12 @@ export async function executeBrowserScreenshotTool(
 
   try {
     const page = await ensureBrowser();
-    await page.screenshot({ path, fullPage: full_page });
+    mkdirSync(dirname(resolvedPath), { recursive: true });
+    await page.screenshot({ path: resolvedPath, fullPage: full_page });
 
     return {
       success: true,
-      output: `Screenshot saved to: ${path}`,
+      output: `Screenshot saved to: ${resolvedPath}`,
     };
   } catch (error: any) {
     return {
